@@ -5,61 +5,152 @@
              RequestedThemeVariant="Light">
   <Application.Styles>
     <FluentTheme />
+
     <Style Selector="Button">
       <Setter Property="MinHeight" Value="40"/>
-      <Setter Property="Padding" Value="14,8"/>
-      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="Padding" Value="16,8"/>
+      <Setter Property="FontSize" Value="14"/>
       <Setter Property="CornerRadius" Value="8"/>
     </Style>
     <Style Selector="Button.accent">
       <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="MinWidth" Value="120"/>
     </Style>
+
     <Style Selector="Button.nav">
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Foreground" Value="#E5E7EB"/>
       <Setter Property="HorizontalAlignment" Value="Stretch"/>
       <Setter Property="HorizontalContentAlignment" Value="Left"/>
-      <Setter Property="Padding" Value="14,12"/>
-      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="Padding" Value="14,10"/>
+      <Setter Property="FontSize" Value="15"/>
       <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="BorderThickness" Value="3,0,0,0"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+    <Style Selector="Button.nav TextBlock">
+      <Setter Property="Foreground" Value="#E5E7EB"/>
+    </Style>
+    <Style Selector="Button.nav TextBlock.hint">
+      <Setter Property="Foreground" Value="#9CA3AF"/>
+      <Setter Property="FontSize" Value="12"/>
     </Style>
     <Style Selector="Button.nav:pointerover">
-      <Setter Property="Background" Value="#1F2937"/>
+      <Setter Property="Background" Value="#1E293B"/>
     </Style>
     <Style Selector="Button.nav.active">
-      <Setter Property="Background" Value="#374151"/>
+      <Setter Property="Background" Value="#1E293B"/>
+      <Setter Property="BorderBrush" Value="#93C5FD"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.nav.active TextBlock.title">
       <Setter Property="Foreground" Value="White"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
+    <Style Selector="Button.nav.active TextBlock.hint">
+      <Setter Property="Foreground" Value="#CBD5E1"/>
+    </Style>
+
     <Style Selector="Border.card">
       <Setter Property="Background" Value="White"/>
       <Setter Property="BorderBrush" Value="#E5E7EB"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="12"/>
-      <Setter Property="Padding" Value="20"/>
+      <Setter Property="Padding" Value="16"/>
     </Style>
-    <Style Selector="Border.owner-banner.owning">
+    <Style Selector="Border.banner">
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Border.banner.owning">
       <Setter Property="Background" Value="#FFFBEB"/>
       <Setter Property="BorderBrush" Value="#D97706"/>
-      <Setter Property="BorderThickness" Value="2"/>
+      <Setter Property="BorderThickness" Value="4,1,1,1"/>
+    </Style>
+    <Style Selector="Border.table-card">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="#E5E7EB"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+    <Style Selector="Border.toolbar">
+      <Setter Property="BorderBrush" Value="#E5E7EB"/>
+      <Setter Property="BorderThickness" Value="0,1,0,0"/>
+      <Setter Property="Padding" Value="0,16,0,0"/>
+      <Setter Property="Margin" Value="0,16,0,0"/>
+    </Style>
+
+    <Style Selector="TextBlock.kicker">
+      <Setter Property="Foreground" Value="#6B7280"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.page-title">
+      <Setter Property="Foreground" Value="#111827"/>
+      <Setter Property="FontSize" Value="22"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="Foreground" Value="#111827"/>
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
     <Style Selector="TextBlock.field">
       <Setter Property="Foreground" Value="#4B5563"/>
       <Setter Property="FontSize" Value="13"/>
-      <Setter Property="Margin" Value="0,0,0,6"/>
-    </Style>
-    <Style Selector="TextBox">
-      <Setter Property="MinHeight" Value="40"/>
-      <Setter Property="Padding" Value="10,8"/>
-      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="0"/>
     </Style>
     <Style Selector="TextBlock.note">
-      <Setter Property="Foreground" Value="#4B5563"/>
+      <Setter Property="Foreground" Value="#6B7280"/>
       <Setter Property="FontSize" Value="13"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="LineHeight" Value="20"/>
+    </Style>
+
+    <Style Selector="TextBox">
+      <Setter Property="MinHeight" Value="40"/>
+      <Setter Property="Padding" Value="12,8"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="CornerRadius" Value="8"/>
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="MinHeight" Value="40"/>
+      <Setter Property="Padding" Value="12,8"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="CornerRadius" Value="8"/>
+    </Style>
+
+    <Style Selector="DataGrid">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="RowBackground" Value="White"/>
+      <Setter Property="BorderBrush" Value="#E5E7EB"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="#F3F4F6"/>
+      <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+      <Setter Property="RowHeight" Value="44"/>
+      <Setter Property="ColumnHeaderHeight" Value="40"/>
+      <Setter Property="CanUserReorderColumns" Value="False"/>
+    </Style>
+    <Style Selector="DataGridColumnHeader">
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="Foreground" Value="#374151"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="16,0"/>
+      <Setter Property="SeparatorBrush" Value="#E5E7EB"/>
+    </Style>
+    <Style Selector="DataGridCell">
+      <Setter Property="Padding" Value="16,0"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
   </Application.Styles>
   <Application.Resources>
+    <Color x:Key="SystemAccentColor">#1D4ED8</Color>
     <conv:OwnerRowBrushConverter x:Key="OwnerRowBrush"/>
     <conv:OwnerFontWeightConverter x:Key="OwnerFontWeight"/>
   </Application.Resources>

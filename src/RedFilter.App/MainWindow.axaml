@@ -3,31 +3,51 @@
         xmlns:views="using:RedFilter.Views"
         x:Class="RedFilter.MainWindow"
         Title="RedFilter"
-        Width="1180"
-        Height="820"
-        MinWidth="980"
-        MinHeight="680"
+        Width="1240"
+        Height="900"
+        MinWidth="1040"
+        MinHeight="760"
         WindowStartupLocation="CenterScreen"
-        Background="#F3F4F6"
+        Background="#F4F5F7"
         FontFamily="Inter, Segoe UI"
-        FontSize="15">
-  <Grid ColumnDefinitions="248,*">
-    <Border Grid.Column="0" Background="#111827" Padding="20,28">
+        FontSize="14">
+  <Grid ColumnDefinitions="260,*">
+    <Border Grid.Column="0" Background="#0F172A" Padding="20,28,20,24">
       <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Spacing="6">
-          <TextBlock Text="RedFilter" Foreground="White" FontSize="28" FontWeight="SemiBold"/>
-          <TextBlock Text="This PC and your router" Foreground="#9CA3AF" FontSize="14" TextWrapping="Wrap"/>
+        <StackPanel DockPanel.Dock="Top" Spacing="14">
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Border Width="36" Height="36" CornerRadius="8" Background="#1D4ED8">
+              <TextBlock Text="R" Foreground="White" FontSize="18" FontWeight="SemiBold"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel VerticalAlignment="Center" Spacing="0">
+              <TextBlock Text="RedFilter" Foreground="White" FontSize="20" FontWeight="SemiBold"/>
+              <TextBlock Text="This PC and your router" Foreground="#94A3B8" FontSize="12"/>
+            </StackPanel>
+          </StackPanel>
         </StackPanel>
-        <TextBlock DockPanel.Dock="Bottom" Foreground="#9CA3AF" FontSize="13" TextWrapping="Wrap"
+
+        <TextBlock DockPanel.Dock="Bottom" Foreground="#94A3B8" FontSize="12" TextWrapping="Wrap" LineHeight="18"
                    Text="Talks only to this computer and the router address you enter."/>
-        <StackPanel Margin="0,32,0,0" Spacing="8">
-          <Button x:Name="NetworkButton" Classes="nav active" Content="Network" Click="ShowNetwork"/>
-          <Button x:Name="RouterButton" Classes="nav" Content="Router" Click="ShowRouter"/>
+
+        <StackPanel Margin="0,28,0,24" Spacing="6">
+          <Button x:Name="NetworkButton" Classes="nav active" Click="ShowNetwork">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="title" Text="Network"/>
+              <TextBlock Classes="hint" Text="Programs on this PC"/>
+            </StackPanel>
+          </Button>
+          <Button x:Name="RouterButton" Classes="nav" Click="ShowRouter">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="title" Text="Router"/>
+              <TextBlock Classes="hint" Text="Your home router"/>
+            </StackPanel>
+          </Button>
         </StackPanel>
       </DockPanel>
     </Border>
 
-    <Grid Grid.Column="1" Margin="28">
+    <Grid Grid.Column="1" Margin="24">
       <views:NetworkView x:Name="NetworkPage"/>
       <views:RouterView x:Name="RouterPage" IsVisible="False"/>
     </Grid>
