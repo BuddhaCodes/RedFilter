@@ -74,7 +74,7 @@ public static class QosPolicyPlanner
             throw new InvalidOperationException(
                 $"RedFilter cannot read the program path for {owner.Name} (PID {owner.Pid}). " +
                 "Windows QoS matches a program path, so this process cannot take the network. " +
-                "Run RedFilter as administrator and choose a program whose path is visible.");
+                "Choose a program whose path is visible.");
         }
 
         var throttle = NormalizeThrottle(throttleBitsPerSecond);

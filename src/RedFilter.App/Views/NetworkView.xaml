@@ -27,7 +27,7 @@
     </StackPanel>
 
     <TextBlock DockPanel.Dock="Bottom" Margin="0,8,0,0" Foreground="{StaticResource Muted}" TextWrapping="Wrap"
-               Text="Windows QoS matches a program path and limits outbound traffic. Download bytes are not capped. System processes stay unthrottled. TCP rates come from Windows connection statistics; UDP endpoints are counted only. The filter stays on after you close this window until you turn it off, and it clears on reboot."/>
+               Text="Windows QoS matches a program path and limits outbound traffic. Download bytes are not capped. System processes stay unthrottled. TCP rates come from Windows connection statistics; UDP endpoints are counted only. Giving a program the network, or turning the filter off, asks Windows for administrator approval and restarts RedFilter. The filter stays on after you close this window until you turn it off, and it clears on reboot."/>
 
     <DataGrid ItemsSource="{Binding Processes}"
               SelectedItem="{Binding Selected}"

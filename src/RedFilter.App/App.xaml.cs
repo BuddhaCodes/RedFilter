@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using RedFilter.Core.Qos;
 using RedFilter.Core.Router;
 using RedFilter.Core.Settings;
 using RedFilter.Platform;
@@ -20,7 +21,15 @@ public partial class App : Application
 
         var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RedFilter");
         var store = new SettingsStore(folder, new DpapiSecretProtector());
-        var network = new NetworkViewModel(new WindowsProcessNetworkSource(), new PowerShellQosPolicyStore(), store, AdminCheck.IsElevated());
+        QosLaunch.TryParse(e.Args, out var pendingLaunch);
+        var network = new NetworkViewModel(
+            new WindowsProcessNetworkSource(),
+            new PowerShellQosPolicyStore(),
+            store,
+            AdminCheck.IsElevated(),
+            pendingLaunch,
+            new WindowsQosElevation(),
+            Shutdown);
         var router = new RouterViewModel(store, endpoint => new HttpRouterTransport(endpoint.Host), WindowsGatewayLookup.TryGetDefaultGateway);
         var window = new MainWindow(network, router);
         MainWindow = window;

@@ -6,6 +6,53 @@ using RedFilter.Core.Settings;
 
 namespace RedFilter.Core.Tests;
 
+public sealed class QosLaunchTests
+{
+    [Fact]
+    public void FormatsAnApplyRequestWithASpacedPath()
+    {
+        var request = new QosLaunchRequest(false, 4242, @"C:\Program Files\Red Filter\app.exe", "Red Filter", 1_000_000);
+        Assert.Equal(
+            "--qos apply --pid 4242 --throttle 1000000 --name \"Red Filter\" --path \"C:\\Program Files\\Red Filter\\app.exe\"",
+            QosLaunch.FormatArguments(request));
+    }
+
+    [Fact]
+    public void ParsesTheArgumentsWindowsHandsBack()
+    {
+        var parsed = AssertParsed(
+            "--qos", "apply",
+            "--pid", "4242",
+            "--throttle", "1000000",
+            "--name", "Red Filter",
+            "--path", @"C:\Program Files\Red Filter\app.exe");
+        Assert.Equal(new QosLaunchRequest(false, 4242, @"C:\Program Files\Red Filter\app.exe", "Red Filter", 1_000_000), parsed);
+    }
+
+    [Fact]
+    public void ClearIsASingleVerb()
+    {
+        Assert.Equal("--qos clear", QosLaunch.FormatArguments(new QosLaunchRequest(true, null, null, null, null)));
+        var parsed = AssertParsed("--qos", "clear");
+        Assert.True(parsed.Clear);
+        Assert.Null(parsed.Path);
+    }
+
+    [Fact]
+    public void RejectsAMissingVerbAndABadPid()
+    {
+        Assert.False(QosLaunch.TryParse(["--pid", "1"], out _));
+        Assert.False(QosLaunch.TryParse(["--qos", "apply", "--pid", "nope"], out _));
+        Assert.False(QosLaunch.TryParse([], out _));
+    }
+
+    private static QosLaunchRequest AssertParsed(params string[] args)
+    {
+        Assert.True(QosLaunch.TryParse(args, out var request));
+        return request!;
+    }
+}
+
 public sealed class FritzChallengeTests
 {
     [Fact]

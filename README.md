@@ -8,7 +8,6 @@ It can give one program priority on the laptop by using Windows QoS policies, an
 
 - Windows 10 or Windows 11, 64-bit
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- An administrator account. The app manifest asks Windows for elevation because QoS policy changes require it.
 
 ## Build and run
 
@@ -16,7 +15,7 @@ From this folder:
 
 ```bat
 dotnet build -c Release
-dotnet run --project src\RedFilter.App -c Release
+dotnet run --project src\RedFilter.App
 ```
 
 Or start the built program:
@@ -25,7 +24,9 @@ Or start the built program:
 src\RedFilter.App\bin\Release\net10.0-windows\RedFilter.exe
 ```
 
-Windows shows a User Account Control prompt. Accept it. If you start the app without elevation, the Network page explains that QoS changes are blocked until you run it as administrator.
+`dotnet run` opens the window as the current user. No administrator prompt is required to open the Network page or the Router page. The Network page says that QoS stays blocked until you elevate.
+
+**Give the network to the selected program** and **Turn filter off** ask Windows for administrator approval. Accept the User Account Control prompt. RedFilter restarts elevated and applies or clears the QoS policies. If you cancel the prompt, the window stays open and QoS stays blocked.
 
 The app window has two pages: **Network** and **Router**.
 
@@ -39,7 +40,7 @@ Choose a process and **Give the network to the selected program**. RedFilter the
 - Limits outbound traffic from other ordinary programs to the rate you pick (256 Kbps, 1 Mbps, or 5 Mbps)
 - Leaves Windows system processes unthrottled so the PC keeps working
 
-**Turn filter off** removes every QoS policy whose name starts with `RedFilter-` and restores normal sharing.
+**Turn filter off** removes every QoS policy whose name starts with `RedFilter-` and restores normal sharing. That button is available before elevation so an existing filter can be cleared.
 
 The page shows the program that currently owns the network. Windows matches the program path, so every process running that same program is included. The limit applies to outbound traffic. It does not cap downloads. Policies are stored in the active QoS store: they remain after you close RedFilter, and Windows drops them on reboot.
 

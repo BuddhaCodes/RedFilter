@@ -5,6 +5,7 @@ using RedFilter.Core.Processes;
 using RedFilter.Core.Qos;
 using RedFilter.Core.Settings;
 using RedFilter.Core.Text;
+using RedFilter.Platform;
 
 namespace RedFilter.ViewModels;
 
@@ -13,6 +14,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     private readonly IProcessNetworkSource _source;
     private readonly IQosPolicyStore _qos;
     private readonly SettingsStore _store;
+    private readonly IQosElevation? _elevationBroker;
+    private readonly Action? _shutdown;
     private readonly SynchronizationContext _ui;
     private readonly CancellationTokenSource _cancel = new();
     private readonly string? _selfPath = Environment.ProcessPath;
@@ -27,15 +30,26 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     private ThrottleChoice? _throttle;
     private string? _ownerPath;
     private int? _ownerPid;
+    private QosLaunchRequest? _pendingLaunch;
     private DateTime _lastReconcileUtc = DateTime.MinValue;
     private int _reconcileGate;
 
-    public NetworkViewModel(IProcessNetworkSource source, IQosPolicyStore qos, SettingsStore store, bool isAdmin)
+    public NetworkViewModel(
+        IProcessNetworkSource source,
+        IQosPolicyStore qos,
+        SettingsStore store,
+        bool isAdmin,
+        QosLaunchRequest? pendingLaunch = null,
+        IQosElevation? elevation = null,
+        Action? shutdown = null)
     {
         _source = source;
         _qos = qos;
         _store = store;
         _isAdmin = isAdmin;
+        _pendingLaunch = isAdmin ? pendingLaunch : null;
+        _elevationBroker = elevation;
+        _shutdown = shutdown;
         _ui = SynchronizationContext.Current ?? new SynchronizationContext();
         ThrottleChoices = new ObservableCollection<ThrottleChoice>
         {
@@ -48,11 +62,15 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
             ?? ThrottleChoices[1];
         _ownerPath = settings.NetworkOwnerPath;
         _ownerPid = settings.NetworkOwnerPid;
-        Elevation = isAdmin
-            ? "Running as administrator. QoS changes are allowed."
-            : "Not running as administrator. Windows will refuse QoS changes until you restart RedFilter from an elevated prompt.";
-        if (!isAdmin)
-            Status = "RedFilter needs to run as administrator to change Windows QoS policies. The program manifest requests elevation. Start RedFilter.exe and accept the User Account Control prompt.";
+        if (isAdmin)
+        {
+            Elevation = "Running as administrator. QoS changes are allowed.";
+        }
+        else
+        {
+            Elevation = "Not running as administrator. QoS stays blocked until you elevate.";
+            Status = "The process list is available. QoS stays blocked until you elevate to give a program the network or turn the filter off.";
+        }
     }
 
     public ObservableCollection<ProcessRowViewModel> Processes { get; } = new();
@@ -89,7 +107,7 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     public bool FilterOn { get => _filterOn; private set { if (Set(ref _filterOn, value)) Raise(nameof(CanTurnOff)); } }
     public bool Busy { get => _busy; private set { if (Set(ref _busy, value)) { Raise(nameof(CanGiveNetwork)); Raise(nameof(CanTurnOff)); } } }
     public bool CanGiveNetwork => !Busy && Selected != null;
-    public bool CanTurnOff => !Busy && FilterOn;
+    public bool CanTurnOff => !Busy && (FilterOn || !_isAdmin);
 
     public void Start() => Task.Run(() => LoopAsync(_cancel.Token));
 
@@ -97,6 +115,27 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     {
         if (!_isAdmin)
             return;
+
+        if (_pendingLaunch is { } pending)
+        {
+            _pendingLaunch = null;
+            if (pending.Clear)
+            {
+                await RemoveFilterAsync();
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(pending.Path))
+            {
+                Status = "The elevated restart did not include a program path, so no QoS policy was changed.";
+                return;
+            }
+
+            var name = string.IsNullOrWhiteSpace(pending.Name) ? Path.GetFileName(pending.Path) : pending.Name;
+            await ApplyOwnerAsync(pending.Pid ?? 0, name, pending.Path, pending.ThrottleBitsPerSecond ?? Throttle?.BitsPerSecond ?? 1_000_000);
+            return;
+        }
+
         try
         {
             var policies = await _qos.ReadAsync(_cancel.Token);
@@ -131,9 +170,9 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (!_isAdmin)
+        if (string.IsNullOrWhiteSpace(selected.Path))
         {
-            Status = "Creating QoS policies needs an elevated process. Restart RedFilter as administrator.";
+            Status = "Windows did not report a program path for this process, so QoS cannot match it. Pick a process that shows a path.";
             return;
         }
 
@@ -141,18 +180,53 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         var answer = MessageBox.Show(
             $"Give network priority to {selected.Name} (PID {selected.Pid})?\n\n" +
             $"Windows will mark that program's traffic with DSCP {QosPolicyPlanner.OwnerDscp} and limit outbound traffic from other ordinary programs to {RateText.BitsPerSecond(rate)}.\n\n" +
-            "The policy matches the program path, so every process running the same program is included. Downloads are not limited. Windows system processes are left alone.",
+            "The policy matches the program path, so every process running the same program is included. Downloads are not limited. Windows system processes are left alone." +
+            (_isAdmin ? "" : "\n\nWindows will ask for administrator approval, then RedFilter restarts and applies the change."),
             "RedFilter",
             MessageBoxButton.OKCancel,
             MessageBoxImage.Information);
         if (answer != MessageBoxResult.OK)
             return;
 
+        if (!_isAdmin)
+        {
+            RequestElevation(new QosLaunchRequest(false, selected.Pid, selected.Path, selected.Name, rate));
+            return;
+        }
+
+        await ApplyOwnerAsync(selected.Pid, selected.Name, selected.Path, rate);
+    }
+
+    public async Task TurnOffAsync()
+    {
+        var answer = MessageBox.Show(
+            "Turn the filter off and restore normal sharing?\n\nRedFilter will remove every QoS policy whose name starts with RedFilter-." +
+            (_isAdmin ? "" : "\n\nWindows will ask for administrator approval, then RedFilter restarts and clears the filter."),
+            "RedFilter",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Information);
+        if (answer != MessageBoxResult.OK)
+            return;
+
+        if (!_isAdmin)
+        {
+            RequestElevation(new QosLaunchRequest(true, null, null, null, null));
+            return;
+        }
+
+        await RemoveFilterAsync();
+    }
+
+    private async Task ApplyOwnerAsync(int pid, string name, string path, long rate)
+    {
         Busy = true;
         try
         {
             var snapshot = _source.Sample();
-            var owner = snapshot.Processes.FirstOrDefault(process => process.Pid == selected.Pid) ?? selected.Source;
+            var owner = snapshot.Processes.FirstOrDefault(process =>
+                    string.Equals(process.ExecutablePath, path, StringComparison.OrdinalIgnoreCase))
+                ?? snapshot.Processes.FirstOrDefault(process => process.Pid == pid)
+                ?? new ProcessNetworkRow(pid, name, path, 0, 0, 0, 0);
             var plan = QosPolicyPlanner.Build(owner, snapshot.Processes, rate, _selfPath);
             await _qos.ApplyAsync(plan.Policies, _cancel.Token);
             _ownerPath = plan.OwnerPath;
@@ -173,22 +247,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         }
     }
 
-    public async Task TurnOffAsync()
+    private async Task RemoveFilterAsync()
     {
-        if (!_isAdmin)
-        {
-            Status = "Removing QoS policies needs an elevated process. Restart RedFilter as administrator.";
-            return;
-        }
-
-        var answer = MessageBox.Show(
-            "Turn the filter off and restore normal sharing?\n\nRedFilter will remove every QoS policy whose name starts with RedFilter-.",
-            "RedFilter",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Information);
-        if (answer != MessageBoxResult.OK)
-            return;
-
         Busy = true;
         try
         {
@@ -209,6 +269,27 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         {
             Busy = false;
         }
+    }
+
+    private void RequestElevation(QosLaunchRequest request)
+    {
+        if (_elevationBroker == null)
+        {
+            Status = "QoS stays blocked until you elevate.";
+            return;
+        }
+
+        Busy = true;
+        Status = "Windows is asking for administrator approval.";
+        if (!_elevationBroker.TryRelaunch(request, out var failure))
+        {
+            Busy = false;
+            Status = failure;
+            return;
+        }
+
+        Status = "RedFilter is restarting with administrator approval.";
+        _shutdown?.Invoke();
     }
 
     public void Dispose() => _cancel.Cancel();

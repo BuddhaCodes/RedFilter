@@ -4,8 +4,8 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- QoS policy changes require an elevated token. Windows shows a UAC prompt. -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!-- Start as the current user so dotnet run can open the window. QoS changes relaunch with runas. -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>
