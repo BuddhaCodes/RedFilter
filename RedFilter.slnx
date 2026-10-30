@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RedFilter.App/RedFilter.App.csproj" />
+    <Project Path="src/RedFilter.Core/RedFilter.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RedFilter.Core.Tests/RedFilter.Core.Tests.csproj" />
+  </Folder>
+</Solution>

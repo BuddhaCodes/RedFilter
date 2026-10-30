@@ -1,0 +1,40 @@
+<Window x:Class="RedFilter.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:RedFilter.Views"
+        Title="RedFilter"
+        Height="760"
+        Width="1140"
+        MinHeight="640"
+        MinWidth="960"
+        WindowStartupLocation="CenterScreen"
+        Background="#F3F4F6"
+        FontFamily="Segoe UI"
+        FontSize="13">
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="220"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <Border Grid.Column="0" Background="#1F2937">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="20,24,20,12">
+          <TextBlock Text="RedFilter" Foreground="White" FontSize="22" FontWeight="SemiBold"/>
+          <TextBlock Text="This PC and your router" Foreground="#9CA3AF" Margin="0,4,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Bottom" Margin="20" Foreground="#9CA3AF" TextWrapping="Wrap"
+                   Text="Talks only to this computer and the router address you enter."/>
+        <StackPanel Margin="12,8">
+          <RadioButton x:Name="NetworkNav" Content="Network" Style="{StaticResource NavButton}" IsChecked="True" Checked="ShowNetwork"/>
+          <RadioButton Content="Router" Style="{StaticResource NavButton}" Checked="ShowRouter"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Grid Grid.Column="1" Margin="20">
+      <views:NetworkView x:Name="NetworkPage"/>
+      <views:RouterView x:Name="RouterPage" Visibility="Collapsed"/>
+    </Grid>
+  </Grid>
+</Window>
