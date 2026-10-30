@@ -42,7 +42,17 @@ public sealed class ProcessRowViewModel : ObservableObject
     public int Connections { get => _connections; private set => Set(ref _connections, value); }
     public double DownloadBps { get => _downloadBps; private set => Set(ref _downloadBps, value); }
     public double UploadBps { get => _uploadBps; private set => Set(ref _uploadBps, value); }
-    public bool IsOwner { get => _isOwner; private set => Set(ref _isOwner, value); }
+    public bool IsOwner
+    {
+        get => _isOwner;
+        private set
+        {
+            if (Set(ref _isOwner, value))
+                Raise(nameof(OwnerLabel));
+        }
+    }
+
+    public string OwnerLabel => IsOwner ? "Yes" : "";
     public ProcessNetworkRow Source => _source;
 
     public void Update(ProcessNetworkRow source, bool isOwner)

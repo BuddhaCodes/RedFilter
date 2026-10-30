@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Windows;
+using Avalonia.Threading;
 using RedFilter.Core.Processes;
 using RedFilter.Core.Qos;
 using RedFilter.Core.Settings;
@@ -16,7 +16,7 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     private readonly SettingsStore _store;
     private readonly IQosElevation? _elevationBroker;
     private readonly Action? _shutdown;
-    private readonly SynchronizationContext _ui;
+    private readonly IUserPrompt? _prompt;
     private readonly CancellationTokenSource _cancel = new();
     private readonly string? _selfPath = Environment.ProcessPath;
 
@@ -41,7 +41,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         bool isAdmin,
         QosLaunchRequest? pendingLaunch = null,
         IQosElevation? elevation = null,
-        Action? shutdown = null)
+        Action? shutdown = null,
+        IUserPrompt? prompt = null)
     {
         _source = source;
         _qos = qos;
@@ -50,7 +51,7 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         _pendingLaunch = isAdmin ? pendingLaunch : null;
         _elevationBroker = elevation;
         _shutdown = shutdown;
-        _ui = SynchronizationContext.Current ?? new SynchronizationContext();
+        _prompt = prompt;
         ThrottleChoices = new ObservableCollection<ThrottleChoice>
         {
             new() { Label = "Strict — 256 Kbps", BitsPerSecond = 256_000 },
@@ -177,15 +178,12 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         }
 
         var rate = QosPolicyPlanner.NormalizeThrottle(Throttle?.BitsPerSecond ?? 1_000_000);
-        var answer = MessageBox.Show(
+        var confirmed = await ConfirmAsync(
             $"Give network priority to {selected.Name} (PID {selected.Pid})?\n\n" +
             $"Windows will mark that program's traffic with DSCP {QosPolicyPlanner.OwnerDscp} and limit outbound traffic from other ordinary programs to {RateText.BitsPerSecond(rate)}.\n\n" +
             "The policy matches the program path, so every process running the same program is included. Downloads are not limited. Windows system processes are left alone." +
-            (_isAdmin ? "" : "\n\nWindows will ask for administrator approval, then RedFilter restarts and applies the change."),
-            "RedFilter",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Information);
-        if (answer != MessageBoxResult.OK)
+            (_isAdmin ? "" : "\n\nWindows will ask for administrator approval, then RedFilter restarts and applies the change."));
+        if (!confirmed)
             return;
 
         if (!_isAdmin)
@@ -199,13 +197,10 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
 
     public async Task TurnOffAsync()
     {
-        var answer = MessageBox.Show(
+        var confirmed = await ConfirmAsync(
             "Turn the filter off and restore normal sharing?\n\nRedFilter will remove every QoS policy whose name starts with RedFilter-." +
-            (_isAdmin ? "" : "\n\nWindows will ask for administrator approval, then RedFilter restarts and clears the filter."),
-            "RedFilter",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Information);
-        if (answer != MessageBoxResult.OK)
+            (_isAdmin ? "" : "\n\nWindows will ask for administrator approval, then RedFilter restarts and clears the filter."));
+        if (!confirmed)
             return;
 
         if (!_isAdmin)
@@ -415,23 +410,36 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         return $"Network owner: {file}{pidText}. Other ordinary programs are limited.";
     }
 
-    private void Post(Action action) => _ui.Post(_ => action(), null);
+    private async Task<bool> ConfirmAsync(string message)
+    {
+        if (_prompt == null)
+            return false;
+        return await _prompt.ConfirmAsync(message);
+    }
+
+    private void Post(Action action)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+            action();
+        else
+            Dispatcher.UIThread.Post(action);
+    }
 
     private Task PostAsync(Func<Task> action)
     {
         var done = new TaskCompletionSource();
-        _ui.Post(async _ =>
+        Dispatcher.UIThread.Post(async () =>
         {
             try
             {
                 await action();
-                done.SetResult();
+                done.TrySetResult();
             }
             catch (Exception ex)
             {
-                done.SetException(ex);
+                done.TrySetException(ex);
             }
-        }, null);
+        });
         return done.Task;
     }
 }

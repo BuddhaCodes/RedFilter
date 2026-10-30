@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RedFilter.ViewModels"
+             x:Class="RedFilter.Views.NetworkView"
+             x:DataType="vm:NetworkViewModel">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Classes="card owner-banner" Classes.owning="{Binding FilterOn}" Margin="0,0,0,16">
+      <StackPanel Spacing="8">
+        <TextBlock Text="Network owner" IsVisible="{Binding FilterOn}" Foreground="#92400E" FontSize="13" FontWeight="SemiBold"/>
+        <TextBlock Text="No filter" IsVisible="{Binding !FilterOn}" Foreground="#4B5563" FontSize="13" FontWeight="SemiBold"/>
+        <TextBlock Text="{Binding OwnerText}" FontSize="26" FontWeight="SemiBold" Foreground="#111827" TextWrapping="Wrap"/>
+        <TextBlock Text="{Binding Elevation}" Classes="note"/>
+        <TextBlock Text="{Binding Status}" Foreground="#111827" TextWrapping="Wrap"/>
+      </StackPanel>
+    </Border>
+
+    <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,16">
+      <StackPanel Spacing="12">
+        <TextBlock Text="Give one program the network" FontSize="16" FontWeight="SemiBold" Foreground="#111827"/>
+        <TextBlock Text="Limit other programs" Classes="field"/>
+        <ComboBox Width="240" MinHeight="40" HorizontalAlignment="Left"
+                  ItemsSource="{Binding ThrottleChoices}"
+                  SelectedItem="{Binding Throttle}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ThrottleChoice">
+              <TextBlock Text="{Binding Label}"/>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="Give the network to the selected program"
+                  Classes="accent"
+                  IsEnabled="{Binding CanGiveNetwork}"
+                  Click="GiveNetwork_Click"/>
+          <Button Content="Turn filter off"
+                  IsEnabled="{Binding CanTurnOff}"
+                  Click="TurnOff_Click"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <TextBlock DockPanel.Dock="Bottom" Margin="0,12,0,0" Classes="note"
+               Text="Windows QoS matches a program path and limits outbound traffic. Download bytes are not capped. System processes stay unthrottled. TCP rates come from Windows connection statistics; UDP endpoints are counted only. Giving a program the network, or turning the filter off, asks Windows for administrator approval and restarts RedFilter. The filter stays on after you close this window until you turn it off, and it clears on reboot."/>
+
+    <DataGrid x:CompileBindings="False"
+              ItemsSource="{Binding Processes}"
+              SelectedItem="{Binding Selected, Mode=TwoWay}"
+              AutoGenerateColumns="False"
+              IsReadOnly="True"
+              CanUserSortColumns="False"
+              CanUserReorderColumns="False"
+              GridLinesVisibility="Horizontal"
+              BorderBrush="#E5E7EB"
+              BorderThickness="1"
+              RowHeight="40">
+      <DataGrid.Styles>
+        <Style Selector="DataGridRow">
+          <Setter Property="Background" Value="{Binding IsOwner, Converter={StaticResource OwnerRowBrush}}"/>
+          <Setter Property="FontWeight" Value="{Binding IsOwner, Converter={StaticResource OwnerFontWeight}}"/>
+        </Style>
+      </DataGrid.Styles>
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Owns the network" Binding="{Binding OwnerLabel}" Width="160"/>
+        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="160"/>
+        <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="80"/>
+        <DataGridTextColumn Header="Download" Binding="{Binding Download}" Width="120"/>
+        <DataGridTextColumn Header="Upload" Binding="{Binding Upload}" Width="120"/>
+        <DataGridTextColumn Header="Connections" Binding="{Binding Connections}" Width="120"/>
+        <DataGridTextColumn Header="Program path" Binding="{Binding Path}" Width="*"/>
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</UserControl>

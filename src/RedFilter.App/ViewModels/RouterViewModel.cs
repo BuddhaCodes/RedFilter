@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Windows;
 using RedFilter.Core.Router;
 using RedFilter.Core.Settings;
 using RedFilter.Core.Text;
@@ -11,6 +10,7 @@ public sealed class RouterViewModel : ObservableObject
     private readonly SettingsStore _store;
     private readonly RouterWorkflow _workflow;
     private readonly Func<string?> _gateway;
+    private readonly IUserPrompt? _prompt;
     private string? _password;
 
     private string _address = "";
@@ -25,11 +25,12 @@ public sealed class RouterViewModel : ObservableObject
     private RouterCapabilities _capabilities = RouterCapabilities.None;
     private RouterUsageKind _usageKind = RouterUsageKind.None;
 
-    public RouterViewModel(SettingsStore store, Func<RouterEndpoint, IRouterTransport> transportFactory, Func<string?> gateway)
+    public RouterViewModel(SettingsStore store, Func<RouterEndpoint, IRouterTransport> transportFactory, Func<string?> gateway, IUserPrompt? prompt = null)
     {
         _store = store;
         _workflow = new RouterWorkflow(transportFactory);
         _gateway = gateway;
+        _prompt = prompt;
         Brands = new ObservableCollection<BrandChoice>
         {
             new() { Id = "auto", Label = "Detect automatically" },
@@ -45,7 +46,28 @@ public sealed class RouterViewModel : ObservableObject
 
     public string Address { get => _address; set { if (Set(ref _address, value)) RefreshIdle(); } }
     public string Username { get => _username; set { if (Set(ref _username, value)) RefreshIdle(); } }
-    public string Brand { get => _brand; set { if (Set(ref _brand, value)) RefreshIdle(); } }
+    public string Brand
+    {
+        get => _brand;
+        set
+        {
+            if (!Set(ref _brand, value))
+                return;
+            Raise(nameof(SelectedBrand));
+            RefreshIdle();
+        }
+    }
+
+    public BrandChoice? SelectedBrand
+    {
+        get => Brands.FirstOrDefault(choice => choice.Id == _brand);
+        set
+        {
+            if (value == null || value.Id == _brand)
+                return;
+            Brand = value.Id;
+        }
+    }
     public string Model { get => _model; set => Set(ref _model, value); }
     public string Status { get => _status; set => Set(ref _status, value); }
     public string Top { get => _top; private set => Set(ref _top, value); }
@@ -92,6 +114,7 @@ public sealed class RouterViewModel : ObservableObject
         Raise(nameof(Address));
         Raise(nameof(Username));
         Raise(nameof(Brand));
+        Raise(nameof(SelectedBrand));
         Raise(nameof(Model));
         Status = IdleStatus();
         Top = "";
@@ -257,8 +280,7 @@ public sealed class RouterViewModel : ObservableObject
             return;
         }
 
-        var answer = MessageBox.Show(confirm + "\n\n" + selected.Name + "  " + selected.Mac, "RedFilter", MessageBoxButton.OKCancel, MessageBoxImage.Information);
-        if (answer != MessageBoxResult.OK)
+        if (_prompt == null || !await _prompt.ConfirmAsync(confirm + "\n\n" + selected.Name + "  " + selected.Mac))
             return;
 
         Busy = true;

@@ -1,6 +1,6 @@
 # RedFilter
 
-RedFilter is a Windows desktop app for your own PC and your own home router.
+RedFilter is a Windows desktop app, built with Avalonia, for your own PC and your own home router.
 
 It can give one program priority on the laptop by using Windows QoS policies, and it can sign in to a router you configure and list the clients that router reports. It does not scan the network, guess passwords, or send Wi-Fi frames from the PC.
 
@@ -14,13 +14,15 @@ It can give one program priority on the laptop by using Windows QoS policies, an
 From this folder:
 
 ```bat
-dotnet build -c Release
 dotnet run --project src\RedFilter.App
 ```
 
-Or start the built program:
+That builds the Debug app and opens the window. The executable is `src\RedFilter.App\bin\Debug\net10.0-windows\RedFilter.exe`.
+
+A Release build is:
 
 ```bat
+dotnet build -c Release
 src\RedFilter.App\bin\Release\net10.0-windows\RedFilter.exe
 ```
 
@@ -42,7 +44,7 @@ Choose a process and **Give the network to the selected program**. RedFilter the
 
 **Turn filter off** removes every QoS policy whose name starts with `RedFilter-` and restores normal sharing. That button is available before elevation so an existing filter can be cleared.
 
-The page shows the program that currently owns the network. Windows matches the program path, so every process running that same program is included. The limit applies to outbound traffic. It does not cap downloads. Policies are stored in the active QoS store: they remain after you close RedFilter, and Windows drops them on reboot.
+The page shows which program owns the network in the banner at the top, and marks that program's row with **Yes** in the **Owns the network** column. Windows matches the program path, so every process running that same program is included. The limit applies to outbound traffic. It does not cap downloads. Policies are stored in the active QoS store: they remain after you close RedFilter, and Windows drops them on reboot.
 
 ## Router page
 

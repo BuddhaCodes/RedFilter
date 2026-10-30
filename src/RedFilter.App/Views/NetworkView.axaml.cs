@@ -1,5 +1,5 @@
-using System.Windows;
-using System.Windows.Controls;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
 using RedFilter.ViewModels;
 
 namespace RedFilter.Views;
@@ -11,9 +11,9 @@ public partial class NetworkView : UserControl
         InitializeComponent();
     }
 
-    private NetworkViewModel Vm => (NetworkViewModel)DataContext;
+    private NetworkViewModel Vm => (NetworkViewModel)DataContext!;
 
-    private async void GiveNetwork_Click(object sender, RoutedEventArgs e)
+    private async void GiveNetwork_Click(object? sender, RoutedEventArgs e)
     {
         try
         {
@@ -25,7 +25,7 @@ public partial class NetworkView : UserControl
         }
     }
 
-    private async void TurnOff_Click(object sender, RoutedEventArgs e)
+    private async void TurnOff_Click(object? sender, RoutedEventArgs e)
     {
         try
         {

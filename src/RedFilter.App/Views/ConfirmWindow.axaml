@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="RedFilter.Views.ConfirmWindow"
+        Title="RedFilter"
+        Width="520"
+        MinHeight="160"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="White">
+  <StackPanel Margin="24" Spacing="18">
+    <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="15" Foreground="#111827"/>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="CancelButton" Content="Cancel" MinWidth="104" Click="Cancel_Click"/>
+      <Button Content="OK" Classes="accent" MinWidth="104" Click="Ok_Click"/>
+    </StackPanel>
+  </StackPanel>
+</Window>
