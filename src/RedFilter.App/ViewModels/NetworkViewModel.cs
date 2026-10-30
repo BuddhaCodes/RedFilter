@@ -33,6 +33,7 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     private QosLaunchRequest? _pendingLaunch;
     private DateTime _lastReconcileUtc = DateTime.MinValue;
     private int _reconcileGate;
+    private int _started;
 
     public NetworkViewModel(
         IProcessNetworkSource source,
@@ -110,7 +111,12 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     public bool CanGiveNetwork => !Busy && Selected != null;
     public bool CanTurnOff => !Busy && (FilterOn || !_isAdmin);
 
-    public void Start() => Task.Run(() => LoopAsync(_cancel.Token));
+    public void Start()
+    {
+        if (Interlocked.Exchange(ref _started, 1) != 0)
+            return;
+        Task.Run(() => LoopAsync(_cancel.Token));
+    }
 
     public async Task InitializeAsync()
     {
@@ -291,15 +297,17 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
 
     private async Task LoopAsync(CancellationToken cancellationToken)
     {
+        // QoS policy restore must not block the program list. A slow PowerShell
+        // query used to leave the page on "Reading processes…".
         if (_isAdmin)
-            await PostAsync(InitializeAsync);
+            _ = PostAsync(InitializeAsync);
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
                 var snapshot = _source.Sample();
                 Post(() => ApplySnapshot(snapshot));
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
                 if (FilterOn && !Busy && DateTime.UtcNow - _lastReconcileUtc > TimeSpan.FromSeconds(3))
                     await ReconcileAsync(force: false);
             }
@@ -350,10 +358,20 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
                 Processes.Move(current, target);
         }
 
-        if (!string.IsNullOrWhiteSpace(snapshot.Warning) && !FilterOn && !Busy &&
-            (Status.StartsWith("Reading", StringComparison.Ordinal) || Status.StartsWith("TCP throughput", StringComparison.Ordinal)))
-            Status = snapshot.Warning;
+        if (!Busy && IsProgressStatus(Status))
+        {
+            var listed = Processes.Count == 1
+                ? "Listed 1 running program."
+                : $"Listed {Processes.Count} running programs.";
+            Status = string.IsNullOrWhiteSpace(snapshot.Warning) ? listed : listed + " " + snapshot.Warning;
+        }
     }
+
+    private static bool IsProgressStatus(string status) =>
+        status.StartsWith("Reading", StringComparison.Ordinal)
+        || status.StartsWith("Listed", StringComparison.Ordinal)
+        || status.StartsWith("TCP throughput", StringComparison.Ordinal)
+        || status.StartsWith("Network counters", StringComparison.Ordinal);
 
     private async Task ReconcileAsync(bool force)
     {

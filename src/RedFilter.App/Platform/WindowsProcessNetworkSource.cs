@@ -19,43 +19,104 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
     private const uint ProcessQueryLimitedInformation = 0x1000;
 
     private readonly object _gate = new();
+    private readonly object _pathGate = new();
     private readonly Dictionary<string, ulong> _lastIn = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ulong> _lastOut = new(StringComparer.Ordinal);
     private readonly Dictionary<int, string?> _paths = new();
     private DateTime _lastSampleUtc = DateTime.MinValue;
     private bool _estatsWorked;
+    private Task<TransportRead>? _transportTask;
+    private TransportRead? _completedTransport;
 
     public ProcessNetworkSnapshot Sample()
     {
-        lock (_gate)
-            return SampleCore();
-    }
-
-    private ProcessNetworkSnapshot SampleCore()
-    {
-        var now = DateTime.UtcNow;
-        var elapsed = (now - _lastSampleUtc).TotalSeconds;
-        var first = _lastSampleUtc == DateTime.MinValue;
-        _lastSampleUtc = now;
-
-        var tcp = new Dictionary<int, (int count, double down, double up)>();
-        var udp = new Dictionary<int, int>();
-        var warning = (string?)null;
-
+        // Programs are listed even when Windows connection statistics are slow.
+        // The counter read used to run first and could stall the table forever.
+        var rows = CaptureProcesses(out var processWarning);
+        var task = StartTransportRead();
+        TransportRead? transport = _completedTransport;
+        string? warning = processWarning;
         try
         {
-            ReadTcp(AfInet, false, tcp, elapsed, first);
-            ReadTcp(AfInet6, true, tcp, elapsed, first);
-            ReadUdp(AfInet, false, udp);
-            ReadUdp(AfInet6, true, udp);
+            if (task.IsCompleted || task.Wait(TimeSpan.FromSeconds(2)))
+                transport = task.Result;
+        }
+        catch (AggregateException ex)
+        {
+            warning = Join(warning, "Network counters could not be read: " + ex.GetBaseException().Message);
+        }
+
+        if (transport == null)
+            warning = Join(warning, "Network counters are taking too long. Programs are listed without live rates.");
+        else
+        {
+            Merge(rows, transport);
+            warning = Join(processWarning, transport.Warning);
+        }
+
+        return new ProcessNetworkSnapshot(
+            rows.Values.OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase).ToList(),
+            transport?.ThroughputAvailable ?? false,
+            warning);
+    }
+
+    private Task<TransportRead> StartTransportRead()
+    {
+        lock (_gate)
+        {
+            if (_transportTask == null || _transportTask.IsCompleted)
+                _transportTask = Task.Run(ReadTransport);
+            return _transportTask;
+        }
+    }
+
+    private TransportRead ReadTransport()
+    {
+        lock (_gate)
+        {
+            var now = DateTime.UtcNow;
+            var elapsed = (now - _lastSampleUtc).TotalSeconds;
+            var first = _lastSampleUtc == DateTime.MinValue;
+            _lastSampleUtc = now;
+            var tcp = new Dictionary<int, (int count, double down, double up)>();
+            var udp = new Dictionary<int, int>();
+            string? warning = null;
+            try
+            {
+                ReadTcp(AfInet, false, tcp, elapsed, first);
+                ReadTcp(AfInet6, true, tcp, elapsed, first);
+                ReadUdp(AfInet, false, udp);
+                ReadUdp(AfInet6, true, udp);
+                if (!_estatsWorked && tcp.Values.Any(item => item.count > 0))
+                    warning = "TCP throughput is not available from Windows connection statistics yet. Connection counts are shown.";
+            }
+            catch (Exception ex)
+            {
+                warning = "Network counters could not be read: " + ex.Message;
+            }
+
+            var result = new TransportRead(tcp, udp, warning, _estatsWorked);
+            _completedTransport = result;
+            return result;
+        }
+    }
+
+    private Dictionary<int, ProcessNetworkRow> CaptureProcesses(out string? warning)
+    {
+        warning = null;
+        var rows = new Dictionary<int, ProcessNetworkRow>();
+        Process[] processes;
+        try
+        {
+            processes = Process.GetProcesses();
         }
         catch (Exception ex)
         {
-            warning = "Network counters could not be read: " + ex.Message;
+            warning = "Running programs could not be listed: " + ex.Message;
+            return rows;
         }
 
-        var rows = new Dictionary<int, ProcessNetworkRow>();
-        foreach (var process in Process.GetProcesses())
+        foreach (var process in processes)
         {
             try
             {
@@ -64,9 +125,7 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
                 var name = string.IsNullOrWhiteSpace(process.ProcessName)
                     ? (path == null ? "pid " + pid : Path.GetFileNameWithoutExtension(path))
                     : process.ProcessName;
-                tcp.TryGetValue(pid, out var network);
-                udp.TryGetValue(pid, out var udpCount);
-                rows[pid] = new ProcessNetworkRow(pid, name, path, network.count, udpCount, network.down, network.up);
+                rows[pid] = new ProcessNetworkRow(pid, name, path, 0, 0, 0, 0);
             }
             catch (Exception)
             {
@@ -78,25 +137,68 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
             }
         }
 
-        foreach (var pair in tcp)
+        lock (_pathGate)
         {
-            if (rows.ContainsKey(pair.Key))
-                continue;
-            udp.TryGetValue(pair.Key, out var udpCount);
-            var path = PathFor(pair.Key);
-            var name = path == null ? "pid " + pair.Key : Path.GetFileNameWithoutExtension(path);
-            rows[pair.Key] = new ProcessNetworkRow(pair.Key, name, path, pair.Value.count, udpCount, pair.Value.down, pair.Value.up);
+            var stale = _paths.Keys.Where(pid => !rows.ContainsKey(pid)).ToList();
+            foreach (var pid in stale)
+                _paths.Remove(pid);
         }
 
-        if (!_estatsWorked && tcp.Values.Any(item => item.count > 0))
-            warning ??= "TCP throughput is not available from Windows connection statistics yet. Connection counts are shown.";
-
-        var stale = _paths.Keys.Where(pid => !rows.ContainsKey(pid)).ToList();
-        foreach (var pid in stale)
-            _paths.Remove(pid);
-
-        return new ProcessNetworkSnapshot(rows.Values.OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase).ToList(), _estatsWorked, warning);
+        return rows;
     }
+
+    private void Merge(Dictionary<int, ProcessNetworkRow> rows, TransportRead transport)
+    {
+        foreach (var pair in transport.Tcp)
+        {
+            transport.Udp.TryGetValue(pair.Key, out var udpCount);
+            if (rows.TryGetValue(pair.Key, out var row))
+            {
+                rows[pair.Key] = row with
+                {
+                    TcpConnections = pair.Value.count,
+                    UdpEndpoints = udpCount,
+                    DownloadBytesPerSecond = pair.Value.down,
+                    UploadBytesPerSecond = pair.Value.up
+                };
+            }
+            else
+            {
+                var path = PathFor(pair.Key);
+                var name = path == null ? "pid " + pair.Key : Path.GetFileNameWithoutExtension(path);
+                rows[pair.Key] = new ProcessNetworkRow(pair.Key, name ?? "pid " + pair.Key, path, pair.Value.count, udpCount, pair.Value.down, pair.Value.up);
+            }
+        }
+
+        foreach (var pair in transport.Udp)
+        {
+            if (transport.Tcp.ContainsKey(pair.Key))
+                continue;
+            if (rows.TryGetValue(pair.Key, out var row))
+                rows[pair.Key] = row with { UdpEndpoints = pair.Value };
+            else
+            {
+                var path = PathFor(pair.Key);
+                var name = path == null ? "pid " + pair.Key : Path.GetFileNameWithoutExtension(path);
+                rows[pair.Key] = new ProcessNetworkRow(pair.Key, name ?? "pid " + pair.Key, path, 0, pair.Value, 0, 0);
+            }
+        }
+    }
+
+    private static string? Join(string? first, string? second)
+    {
+        if (string.IsNullOrWhiteSpace(first))
+            return string.IsNullOrWhiteSpace(second) ? null : second;
+        if (string.IsNullOrWhiteSpace(second))
+            return first;
+        return first + " " + second;
+    }
+
+    private sealed record TransportRead(
+        Dictionary<int, (int count, double down, double up)> Tcp,
+        Dictionary<int, int> Udp,
+        string? Warning,
+        bool ThroughputAvailable);
 
     private void ReadTcp(int family, bool ipv6, Dictionary<int, (int count, double down, double up)> totals, double elapsed, bool first)
     {
@@ -294,30 +396,33 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
 
     private string? PathFor(int pid)
     {
-        if (pid <= 4)
-            return null;
-        if (_paths.TryGetValue(pid, out var cached))
-            return cached;
-
-        string? path = null;
-        var handle = OpenProcess(ProcessQueryLimitedInformation, false, (uint)pid);
-        if (handle != IntPtr.Zero)
+        lock (_pathGate)
         {
-            try
-            {
-                var capacity = 1024;
-                var builder = new StringBuilder(capacity);
-                if (QueryFullProcessImageName(handle, 0, builder, ref capacity))
-                    path = builder.ToString();
-            }
-            finally
-            {
-                CloseHandle(handle);
-            }
-        }
+            if (pid <= 4)
+                return null;
+            if (_paths.TryGetValue(pid, out var cached))
+                return cached;
 
-        _paths[pid] = path;
-        return path;
+            string? path = null;
+            var handle = OpenProcess(ProcessQueryLimitedInformation, false, (uint)pid);
+            if (handle != IntPtr.Zero)
+            {
+                try
+                {
+                    var capacity = 1024;
+                    var builder = new StringBuilder(capacity);
+                    if (QueryFullProcessImageName(handle, 0, builder, ref capacity))
+                        path = builder.ToString();
+                }
+                finally
+                {
+                    CloseHandle(handle);
+                }
+            }
+
+            _paths[pid] = path;
+            return path;
+        }
     }
 
     private static IntPtr AllocTable(Func<int> probe, Func<IntPtr, int, uint> fill)

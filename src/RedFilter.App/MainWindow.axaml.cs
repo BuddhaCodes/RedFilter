@@ -18,6 +18,7 @@ public partial class MainWindow : Window
         _network = network;
         NetworkPage.DataContext = network;
         RouterPage.DataContext = router;
+        Opened += (_, _) => network.Start();
         Loaded += (_, _) => network.Start();
         Closed += (_, _) => _network?.Dispose();
     }

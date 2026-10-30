@@ -53,6 +53,7 @@ public partial class App : Application
                 WindowsGatewayLookup.TryGetDefaultGateway,
                 prompt);
             desktop.MainWindow = new MainWindow(network, router);
+            network.Start();
         }
 
         base.OnFrameworkInitializationCompleted();
