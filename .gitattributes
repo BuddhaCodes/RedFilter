@@ -1,0 +1,7 @@
+# Keep LF in the repository and CRLF in Windows working copies, so line endings
+# never show up as changes.
+* text=auto eol=crlf
+*.png binary
+*.ico binary
+*.dll binary
+*.exe binary

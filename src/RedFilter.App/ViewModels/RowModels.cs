@@ -69,6 +69,20 @@ public sealed class ProcessRowViewModel : ObservableObject
     }
 }
 
+public sealed class ProgramRow
+{
+    public int Pid { get; init; }
+    public required string Name { get; init; }
+    public required string Path { get; init; }
+    public double BytesPerSecond { get; init; }
+    public int Connections { get; init; }
+    public bool IsOwner { get; init; }
+    public bool Protected { get; init; }
+
+    public string Rate => BytesPerSecond > 0 ? RateText.BytesPerSecond(BytesPerSecond) : $"{Connections} conexi{(Connections == 1 ? "ón" : "ones")}";
+    public bool CanPrioritize => !IsOwner;
+}
+
 public sealed class ClientRowViewModel
 {
     public required string Name { get; init; }

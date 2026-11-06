@@ -1,0 +1,101 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RedFilter.ViewModels"
+             x:Class="RedFilter.Views.WifiView"
+             x:DataType="vm:WifiViewModel">
+  <Border Classes="card" Padding="0">
+    <DockPanel>
+      <Grid DockPanel.Dock="Top" Margin="20,18,20,12" ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="4">
+          <TextBlock Classes="kicker" Text="MI WI-FI"/>
+          <TextBlock Classes="section" Text="Quién está usando la red"/>
+          <TextBlock Text="{Binding RouterName}" Classes="small" IsVisible="{Binding Connected}"/>
+        </StackPanel>
+        <Button Grid.Column="1" Content="Actualizar" VerticalAlignment="Top"
+                IsVisible="{Binding Connected}" IsEnabled="{Binding !Busy}" Click="Refresh_Click"/>
+      </Grid>
+
+      <!-- Connect: only the password, the address comes from Windows -->
+      <Border DockPanel.Dock="Top" Margin="20,0,20,12" Padding="14" CornerRadius="10" Background="#F8FAFC"
+              BorderBrush="#E2E8F0" BorderThickness="1" IsVisible="{Binding ShowConnect}">
+        <StackPanel Spacing="10">
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
+          <Grid ColumnDefinitions="*,8,Auto" IsVisible="{Binding NeedsPassword}">
+            <TextBox x:Name="PasswordBox" PasswordChar="●" PlaceholderText="Contraseña del router" KeyDown="Password_KeyDown"/>
+            <Button Grid.Column="2" Content="Conectar" Classes="accent" IsEnabled="{Binding !Busy}" Click="Connect_Click"/>
+          </Grid>
+          <CheckBox x:Name="RememberBox" IsChecked="True" IsVisible="{Binding NeedsPassword}"
+                    Content="Recordarla en este PC (cifrada para tu usuario de Windows)"/>
+        </StackPanel>
+      </Border>
+
+      <StackPanel DockPanel.Dock="Bottom" Margin="20,8,20,16" Spacing="8">
+        <TextBlock Text="{Binding Status}" Classes="note" IsVisible="{Binding Connected}"/>
+        <Button Content="Olvidar la contraseña del router" Classes="link" HorizontalAlignment="Left"
+                IsVisible="{Binding Connected}" Click="Forget_Click"/>
+      </StackPanel>
+
+      <Border BorderBrush="#E5E7EB" BorderThickness="0,1,0,1" IsVisible="{Binding Connected}">
+        <ScrollViewer>
+          <StackPanel>
+            <ItemsControl ItemsSource="{Binding Devices}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:WifiDeviceRow">
+                  <Border Classes="row">
+                    <Grid ColumnDefinitions="32,*,180,150">
+                      <TextBlock Text="{Binding Rank}" Classes="rank" VerticalAlignment="Center"/>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                          <Border Classes="badge" IsVisible="{Binding HasBadge}">
+                            <TextBlock Text="{Binding Badge}"/>
+                          </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding Detail}" Classes="small"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4" Margin="12,0">
+                        <Border Height="6" CornerRadius="3" Background="#E5E7EB" Width="160" HorizontalAlignment="Left">
+                          <Border Height="6" CornerRadius="3" Background="#2563EB" Width="{Binding BarWidth}" HorizontalAlignment="Left"/>
+                        </Border>
+                        <TextBlock Text="{Binding Activity}" Classes="small"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Right">
+                        <Button Content="Bloquear" Classes="danger small-btn" IsVisible="{Binding CanBlock}" Click="Block_Click" Tag="{Binding}"/>
+                        <Button Content="{Binding UnblockLabel}" Classes="small-btn" IsVisible="{Binding CanUnblock}" Click="Unblock_Click" Tag="{Binding}"/>
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel IsVisible="{Binding HasListedOffline}" Margin="20,16,20,4" Spacing="2">
+              <TextBlock Classes="kicker" Text="EN LA LISTA DE BLOQUEO, NO CONECTADOS"/>
+              <TextBlock Classes="note" Text="Guardados en tu router. Si el bloqueo está encendido, no pueden entrar."/>
+            </StackPanel>
+            <ItemsControl ItemsSource="{Binding ListedOffline}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:WifiDeviceRow">
+                  <Border Classes="row">
+                    <Grid ColumnDefinitions="32,*,Auto">
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                          <Border Classes="badge" IsVisible="{Binding HasBadge}">
+                            <TextBlock Text="{Binding Badge}"/>
+                          </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding Detail}" Classes="small"/>
+                      </StackPanel>
+                      <Button Grid.Column="2" Content="Quitar de la lista" Classes="small-btn" Click="Unblock_Click" Tag="{Binding}"/>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </DockPanel>
+  </Border>
+</UserControl>

@@ -5,6 +5,7 @@ public sealed class RouterWorkflow : IDisposable
     private readonly Func<RouterEndpoint, IRouterTransport> _transportFactory;
     private IRouterTransport? _transport;
     private IRouterSession? _session;
+    private LoginDetails? _login;
 
     public RouterWorkflow(Func<RouterEndpoint, IRouterTransport> transportFactory)
     {
@@ -48,14 +49,9 @@ public sealed class RouterWorkflow : IDisposable
 
         try
         {
-            var user = username?.Trim() ?? "";
-            _session = brand switch
-            {
-                "openwrt" => await OpenWrtClient.LoginAsync(transport, endpoint, user, password, cancellationToken),
-                "asuswrt" => await AsusWrtClient.LoginAsync(transport, endpoint, user, password, cancellationToken),
-                "fritz" => await FritzBoxClient.LoginAsync(transport, endpoint, user, password, cancellationToken),
-                _ => throw new RouterException("That brand is not supported.")
-            };
+            var login = new LoginDetails(brand, endpoint, username?.Trim() ?? "", password);
+            _session = await LoginAsync(transport, login, cancellationToken);
+            _login = login;
             var list = await _session.GetClientsAsync(cancellationToken);
             var model = _session.Model;
             var status = $"{_session.Brand} answered." +
@@ -74,12 +70,14 @@ public sealed class RouterWorkflow : IDisposable
                 Capabilities = _session.Capabilities,
                 Clients = list.Clients,
                 UsageKind = list.UsageKind,
-                UsedUntrustedCertificate = transport.UsedUntrustedCertificate
+                UsedUntrustedCertificate = transport.UsedUntrustedCertificate,
+                CertificateSha256 = transport.CertificateSha256
             };
         }
         catch (RouterException ex)
         {
             _session = null;
+            _login = null;
             return WithCertificate(RouterInspection.Failed(SecretText.Scrub(ex.Message, password) + publicNote), transport);
         }
     }
@@ -88,8 +86,50 @@ public sealed class RouterWorkflow : IDisposable
     {
         if (_session == null)
             return null;
-        return await _session.GetClientsAsync(cancellationToken);
+        return await RunAsync(session => session.GetClientsAsync(cancellationToken), cancellationToken);
     }
+
+    /// <summary>
+    /// Runs a call on the current session. When the router says the session expired (OpenWrt sessions
+    /// last five minutes by default, ASUSWRT tokens also time out), RedFilter signs in once more with the
+    /// same credentials and repeats the call. The first call was refused, so nothing is sent twice.
+    /// </summary>
+    public async Task<T> RunAsync<T>(Func<IRouterSession, Task<T>> action, CancellationToken cancellationToken)
+    {
+        var session = _session ?? throw new RouterException("There is no router session. Choose Test connection first.");
+        try
+        {
+            return await action(session);
+        }
+        catch (RouterException ex) when (ex.SessionExpired && _login != null && _transport != null)
+        {
+            try
+            {
+                _session = await LoginAsync(_transport, _login, cancellationToken);
+            }
+            catch (RouterException relogin)
+            {
+                var password = _login.Password;
+                _session = null;
+                _login = null;
+                throw new RouterException(
+                    "The router session expired and signing in again failed. " + SecretText.Scrub(relogin.Message, password), relogin);
+            }
+
+            return await action(_session);
+        }
+    }
+
+    private static async Task<IRouterSession> LoginAsync(IRouterTransport transport, LoginDetails login, CancellationToken cancellationToken) =>
+        login.Brand switch
+        {
+            "openwrt" => await OpenWrtClient.LoginAsync(transport, login.Endpoint, login.Username, login.Password, cancellationToken),
+            "asuswrt" => await AsusWrtClient.LoginAsync(transport, login.Endpoint, login.Username, login.Password, cancellationToken),
+            "fritz" => await FritzBoxClient.LoginAsync(transport, login.Endpoint, login.Username, login.Password, cancellationToken),
+            _ => throw new RouterException("That brand is not supported.")
+        };
+
+    private sealed record LoginDetails(string Brand, RouterEndpoint Endpoint, string Username, string Password);
 
     public void Dispose() => ReplaceTransport(null);
 
@@ -106,12 +146,14 @@ public sealed class RouterWorkflow : IDisposable
                 Capabilities = inspection.Capabilities,
                 Clients = inspection.Clients,
                 UsageKind = inspection.UsageKind,
-                UsedUntrustedCertificate = transport.UsedUntrustedCertificate
+                UsedUntrustedCertificate = transport.UsedUntrustedCertificate,
+                CertificateSha256 = transport.CertificateSha256
             };
 
     private void ReplaceTransport(IRouterTransport? transport)
     {
         _session = null;
+        _login = null;
         _transport?.Dispose();
         _transport = transport;
     }

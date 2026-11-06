@@ -13,6 +13,8 @@ public sealed class AppSettings
     public string? NetworkOwnerName { get; set; }
     public int? NetworkOwnerPid { get; set; }
     public long ThrottleBitsPerSecond { get; set; } = 1_000_000;
+    public string? RouterCertificateHost { get; set; }
+    public string? RouterCertificateSha256 { get; set; }
 }
 
 public interface ISecretProtector
@@ -50,7 +52,7 @@ public sealed class SettingsStore
             var json = File.ReadAllText(SettingsPath);
             return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             return new AppSettings();
         }
@@ -68,9 +70,11 @@ public sealed class SettingsStore
             NetworkOwnerPath = settings.NetworkOwnerPath,
             NetworkOwnerName = settings.NetworkOwnerName,
             NetworkOwnerPid = settings.NetworkOwnerPid,
-            ThrottleBitsPerSecond = settings.ThrottleBitsPerSecond
+            ThrottleBitsPerSecond = settings.ThrottleBitsPerSecond,
+            RouterCertificateHost = settings.RouterCertificateHost,
+            RouterCertificateSha256 = settings.RouterCertificateSha256
         };
-        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(copy, JsonOptions));
+        WriteAtomically(SettingsPath, System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(copy, JsonOptions)));
     }
 
     public string? LoadPassword()
@@ -103,6 +107,23 @@ public sealed class SettingsStore
         }
 
         var plain = System.Text.Encoding.UTF8.GetBytes(password);
-        File.WriteAllBytes(SecretPath, _protector.Protect(plain));
+        WriteAtomically(SecretPath, _protector.Protect(plain));
+    }
+
+    // Write to a sibling temp file and move it over the target, so a crash or full disk
+    // never leaves a half-written settings.json or secret behind.
+    private static void WriteAtomically(string path, byte[] contents)
+    {
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllBytes(temp, contents);
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp))
+                File.Delete(temp);
+        }
     }
 }

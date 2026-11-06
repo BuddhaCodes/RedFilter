@@ -144,7 +144,7 @@ public sealed class QosPlannerTests
         Assert.Equal(@"C:\Apps\chrome.exe", limit.AppPath);
         Assert.Equal(1_000_000, limit.ThrottleBitsPerSecond);
         Assert.Contains(plan.Notes, note => note.Contains("svchost", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(plan.Notes, note => note.Contains("1 process", StringComparison.Ordinal));
+        Assert.Contains(plan.Notes, note => note.Contains("1 proceso ", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -154,19 +154,14 @@ public sealed class QosPlannerTests
     }
 
     [Fact]
-    public void ScriptEscapesQuotesAndStaysInTheActiveStore()
+    public void ScriptStaysInTheActiveStoreAndNeverContainsAPath()
     {
-        var script = NetQosScript.Apply(
-            new[] { "RedFilter-Limit-ABCDEF123456" },
-            new[]
-            {
-                new QosPolicySpec("RedFilter-Owner", @"C:\Program Files\O'Brien\game.exe", true, 46, null)
-            });
-
+        var script = NetQosScript.Script;
         Assert.Contains("PolicyStore ActiveStore", script, StringComparison.Ordinal);
-        Assert.Contains(@"C:\Program Files\O''Brien\game.exe", script, StringComparison.Ordinal);
+        Assert.Contains("PolicyStore = 'ActiveStore'", script, StringComparison.Ordinal);
         Assert.DoesNotContain("GroupPolicy", script, StringComparison.Ordinal);
-        Assert.Contains("DSCPAction 46", script, StringComparison.Ordinal);
+        Assert.DoesNotContain(@"C:\", script, StringComparison.Ordinal);
+        Assert.Equal(script, System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(NetQosScript.EncodedScript)));
     }
 
     [Fact]

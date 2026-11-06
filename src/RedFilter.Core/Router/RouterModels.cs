@@ -66,6 +66,7 @@ public sealed class RouterInspection
     public IReadOnlyList<RouterClient> Clients { get; init; } = Array.Empty<RouterClient>();
     public RouterUsageKind UsageKind { get; init; }
     public bool UsedUntrustedCertificate { get; init; }
+    public string? CertificateSha256 { get; init; }
 
     public static RouterInspection Failed(string status) => new() { Success = false, Status = status };
 }
@@ -79,6 +80,9 @@ public sealed class RouterException : Exception
     public RouterException(string message, Exception inner) : base(message, inner)
     {
     }
+
+    /// <summary>The router no longer accepts the session token. Signing in again may fix it.</summary>
+    public bool SessionExpired { get; init; }
 }
 
 public static class SecretText

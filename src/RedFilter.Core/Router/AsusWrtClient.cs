@@ -206,7 +206,7 @@ public static class AsusWrtClient
 
                 return trimmed.Length is > 0 and < 80 ? trimmed : null;
             }
-            catch (RouterException)
+            catch (Exception ex) when (ex is RouterException or JsonException)
             {
                 return null;
             }
@@ -229,8 +229,15 @@ public static class AsusWrtClient
             if (response.StatusCode is < 200 or >= 300)
             {
                 throw new RouterException(
-                    $"ASUSWRT {hook} returned HTTP {response.StatusCode}. {SecretText.Excerpt(response.Body, _password)}");
+                    $"ASUSWRT {hook} returned HTTP {response.StatusCode}. {SecretText.Excerpt(response.Body, _password)}")
+                {
+                    SessionExpired = response.StatusCode is 401 or 403
+                };
             }
+
+            // An expired asus_token gets the login page (or a redirect script to it) instead of data.
+            if (response.Body.Contains("Main_Login.asp", StringComparison.OrdinalIgnoreCase))
+                throw new RouterException("The ASUSWRT session expired.") { SessionExpired = true };
 
             return response.Body;
         }

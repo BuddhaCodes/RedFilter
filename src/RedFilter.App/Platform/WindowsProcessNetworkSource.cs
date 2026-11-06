@@ -18,15 +18,32 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
     private const int EstatsData = 1;
     private const uint ProcessQueryLimitedInformation = 0x1000;
 
+    private const uint ErrorAccessDenied = 5;
+
     private readonly object _gate = new();
     private readonly object _pathGate = new();
-    private readonly Dictionary<string, ulong> _lastIn = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, ulong> _lastOut = new(StringComparer.Ordinal);
+    private readonly bool _canEnableEstats;
     private readonly Dictionary<int, string?> _paths = new();
+    // Counters and the "statistics already enabled" set are rebuilt from the live connection table on
+    // every sample, so closed connections drop out instead of piling up for the life of the app.
+    private Dictionary<string, ulong> _lastIn = new(StringComparer.Ordinal);
+    private Dictionary<string, ulong> _lastOut = new(StringComparer.Ordinal);
+    private HashSet<string> _estatsEnabled = new(StringComparer.Ordinal);
+    private Dictionary<string, ulong> _nextIn = new(StringComparer.Ordinal);
+    private Dictionary<string, ulong> _nextOut = new(StringComparer.Ordinal);
+    private HashSet<string> _nextEnabled = new(StringComparer.Ordinal);
     private DateTime _lastSampleUtc = DateTime.MinValue;
     private bool _estatsWorked;
+    private bool _estatsDenied;
     private Task<TransportRead>? _transportTask;
     private TransportRead? _completedTransport;
+
+    /// <param name="isElevated">Per-connection TCP statistics can only be switched on by an administrator.
+    /// Without elevation RedFilter skips them and lists connection counts only.</param>
+    public WindowsProcessNetworkSource(bool isElevated)
+    {
+        _canEnableEstats = isElevated;
+    }
 
     public ProcessNetworkSnapshot Sample()
     {
@@ -51,13 +68,14 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
         else
         {
             Merge(rows, transport);
-            warning = Join(processWarning, transport.Warning);
+            warning = Join(warning, transport.Warning);
         }
 
         return new ProcessNetworkSnapshot(
             rows.Values.OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase).ToList(),
             transport?.ThroughputAvailable ?? false,
-            warning);
+            warning,
+            transport?.CountsAvailable ?? false);
     }
 
     private Task<TransportRead> StartTransportRead()
@@ -81,21 +99,33 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
             var tcp = new Dictionary<int, (int count, double down, double up)>();
             var udp = new Dictionary<int, int>();
             string? warning = null;
+            var countsAvailable = true;
+            _nextIn.Clear();
+            _nextOut.Clear();
+            _nextEnabled.Clear();
             try
             {
                 ReadTcp(AfInet, false, tcp, elapsed, first);
                 ReadTcp(AfInet6, true, tcp, elapsed, first);
                 ReadUdp(AfInet, false, udp);
                 ReadUdp(AfInet6, true, udp);
-                if (!_estatsWorked && tcp.Values.Any(item => item.count > 0))
+                if (!_canEnableEstats || _estatsDenied)
+                    warning = "Live TCP rates need administrator approval. Connection counts are shown.";
+                else if (!_estatsWorked && tcp.Values.Any(item => item.count > 0))
                     warning = "TCP throughput is not available from Windows connection statistics yet. Connection counts are shown.";
             }
             catch (Exception ex)
             {
                 warning = "Network counters could not be read: " + ex.Message;
+                countsAvailable = false;
             }
 
-            var result = new TransportRead(tcp, udp, warning, _estatsWorked);
+            // Swap in the counters for connections that exist right now; the old maps become next round's scratch space.
+            (_lastIn, _nextIn) = (_nextIn, _lastIn);
+            (_lastOut, _nextOut) = (_nextOut, _lastOut);
+            (_estatsEnabled, _nextEnabled) = (_nextEnabled, _estatsEnabled);
+
+            var result = new TransportRead(tcp, udp, warning, _estatsWorked && _canEnableEstats && !_estatsDenied, countsAvailable);
             _completedTransport = result;
             return result;
         }
@@ -198,7 +228,8 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
         Dictionary<int, (int count, double down, double up)> Tcp,
         Dictionary<int, int> Udp,
         string? Warning,
-        bool ThroughputAvailable);
+        bool ThroughputAvailable,
+        bool CountsAvailable);
 
     private void ReadTcp(int family, bool ipv6, Dictionary<int, (int count, double down, double up)> totals, double elapsed, bool first)
     {
@@ -230,8 +261,8 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
                     pid = (int)row.OwningPid;
                     state = (int)row.State;
                     key = "4:" + new IPAddress(row.LocalAddr) + ":" + Port(row.LocalPort) + "-" + new IPAddress(row.RemoteAddr) + ":" + Port(row.RemotePort);
-                    if (state == TcpEstablished)
-                        ReadV4Stats(row, ref bytesIn, ref bytesOut);
+                    if (state == TcpEstablished && CanReadStats)
+                        ReadV4Stats(key, row, ref bytesIn, ref bytesOut);
                 }
                 else
                 {
@@ -239,15 +270,15 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
                     pid = (int)row.OwningPid;
                     state = (int)row.State;
                     key = "6:" + new IPAddress(row.LocalAddr) + ":" + Port(row.LocalPort) + "-" + new IPAddress(row.RemoteAddr) + ":" + Port(row.RemotePort);
-                    if (state == TcpEstablished)
-                        ReadV6Stats(row, ref bytesIn, ref bytesOut);
+                    if (state == TcpEstablished && CanReadStats)
+                        ReadV6Stats(key, row, ref bytesIn, ref bytesOut);
                 }
 
                 if (state != TcpEstablished)
                     continue;
 
-                var down = Rate(key, bytesIn, _lastIn, elapsed, first);
-                var up = Rate(key, bytesOut, _lastOut, elapsed, first);
+                var down = Rate(key, bytesIn, _lastIn, _nextIn, elapsed, first);
+                var up = Rate(key, bytesOut, _lastOut, _nextOut, elapsed, first);
                 totals.TryGetValue(pid, out var current);
                 totals[pid] = (current.count + 1, current.down + down, current.up + up);
             }
@@ -289,7 +320,9 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
         }
     }
 
-    private void ReadV4Stats(MibTcpRowOwnerPid row, ref ulong bytesIn, ref ulong bytesOut)
+    private bool CanReadStats => _canEnableEstats && !_estatsDenied;
+
+    private void ReadV4Stats(string key, MibTcpRowOwnerPid row, ref ulong bytesIn, ref ulong bytesOut)
     {
         var tcpRow = new MibTcpRow
         {
@@ -299,6 +332,8 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
             RemoteAddr = row.RemoteAddr,
             RemotePort = row.RemotePort
         };
+        if (!EnsureEnabled(key, () => EnableStats(ref tcpRow)))
+            return;
         if (!TryReadRod(tcpRow, out var rod))
             return;
         bytesIn = rod.DataBytesIn;
@@ -306,7 +341,7 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
         _estatsWorked = true;
     }
 
-    private void ReadV6Stats(MibTcp6RowOwnerPid row, ref ulong bytesIn, ref ulong bytesOut)
+    private void ReadV6Stats(string key, MibTcp6RowOwnerPid row, ref ulong bytesIn, ref ulong bytesOut)
     {
         var tcpRow = new MibTcp6Row
         {
@@ -318,6 +353,8 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
             RemoteScopeId = row.RemoteScopeId,
             RemotePort = row.RemotePort
         };
+        if (!EnsureEnabled(key, () => EnableStats6(ref tcpRow)))
+            return;
         if (!TryReadRod6(tcpRow, out var rod))
             return;
         bytesIn = rod.DataBytesIn;
@@ -325,20 +362,59 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
         _estatsWorked = true;
     }
 
-    private static bool TryReadRod(MibTcpRow row, out TcpEstatsDataRod rod)
+    // Statistics collection is switched on once per connection, not on every sample.
+    private bool EnsureEnabled(string key, Func<uint> enable)
     {
-        rod = default;
+        if (_estatsEnabled.Contains(key))
+        {
+            _nextEnabled.Add(key);
+            return true;
+        }
+
+        var result = enable();
+        if (result == ErrorAccessDenied)
+        {
+            _estatsDenied = true;
+            return false;
+        }
+
+        if (result != 0)
+            return false;
+        _nextEnabled.Add(key);
+        return true;
+    }
+
+    private static uint EnableStats(ref MibTcpRow row)
+    {
         var enable = new byte[] { 1 };
         var pin = GCHandle.Alloc(enable, GCHandleType.Pinned);
         try
         {
-            SetPerTcpConnectionEStats(ref row, EstatsData, pin.AddrOfPinnedObject(), 0, 1, 0);
+            return SetPerTcpConnectionEStats(ref row, EstatsData, pin.AddrOfPinnedObject(), 0, 1, 0);
         }
         finally
         {
             pin.Free();
         }
+    }
 
+    private static uint EnableStats6(ref MibTcp6Row row)
+    {
+        var enable = new byte[] { 1 };
+        var pin = GCHandle.Alloc(enable, GCHandleType.Pinned);
+        try
+        {
+            return SetPerTcp6ConnectionEStats(ref row, EstatsData, pin.AddrOfPinnedObject(), 0, 1, 0);
+        }
+        finally
+        {
+            pin.Free();
+        }
+    }
+
+    private static bool TryReadRod(MibTcpRow row, out TcpEstatsDataRod rod)
+    {
+        rod = default;
         var size = Marshal.SizeOf<TcpEstatsDataRod>();
         var memory = Marshal.AllocHGlobal(size);
         try
@@ -358,17 +434,6 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
     private static bool TryReadRod6(MibTcp6Row row, out TcpEstatsDataRod rod)
     {
         rod = default;
-        var enable = new byte[] { 1 };
-        var pin = GCHandle.Alloc(enable, GCHandleType.Pinned);
-        try
-        {
-            SetPerTcp6ConnectionEStats(ref row, EstatsData, pin.AddrOfPinnedObject(), 0, 1, 0);
-        }
-        finally
-        {
-            pin.Free();
-        }
-
         var size = Marshal.SizeOf<TcpEstatsDataRod>();
         var memory = Marshal.AllocHGlobal(size);
         try
@@ -385,10 +450,11 @@ public sealed class WindowsProcessNetworkSource : IProcessNetworkSource
         }
     }
 
-    private static double Rate(string key, ulong current, Dictionary<string, ulong> previous, double elapsed, bool first)
+    private static double Rate(string key, ulong current, Dictionary<string, ulong> previous, Dictionary<string, ulong> next, double elapsed, bool first)
     {
-        previous.TryGetValue(key, out var last);
-        previous[key] = current;
+        next[key] = current;
+        if (!previous.TryGetValue(key, out var last))
+            return 0;
         if (first || elapsed < 0.2 || current < last)
             return 0;
         return (current - last) / elapsed;

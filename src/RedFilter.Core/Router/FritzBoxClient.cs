@@ -38,24 +38,16 @@ public static class FritzBoxClient
                 $"This address did not return a FRITZ!Box login_sid.lua page (HTTP {page.StatusCode}). {SecretText.Excerpt(page.Body, password)}");
         }
 
-        var (challenge, blockTime) = FritzChallenge.ReadLoginPage(page.Body);
+        var (_, blockTime) = FritzChallenge.ReadLoginPage(page.Body);
         if (blockTime > 0)
         {
             throw new RouterException(
                 $"The FRITZ!Box asked for a wait of {blockTime} seconds before another login. RedFilter did not send the password.");
         }
 
-        var responseValue = FritzChallenge.Calculate(challenge, password);
-        var posted = await transport.SendAsync(new RouterHttpRequest
-        {
-            Method = HttpMethod.Post,
-            Url = loginUrl,
-            Body = "username=" + Uri.EscapeDataString(username) + "&response=" + Uri.EscapeDataString(responseValue),
-            ContentType = "application/x-www-form-urlencoded"
-        }, cancellationToken);
-        var sid = FritzChallenge.ReadSid(posted.Body);
-        if (string.IsNullOrWhiteSpace(sid) || sid.All(ch => ch == '0'))
-            throw new RouterException("Login failed. The FRITZ!Box rejected the username or password.");
+        // The web-interface SID is not needed: every call below uses TR-064 with digest authentication,
+        // which also checks the credentials. Skipping the web login avoids counting against the
+        // FRITZ!Box login-failure delay and leaving an open web session behind.
 
         var descriptionUrl = new Uri($"http://{endpoint.Host}:49000/tr64desc.xml");
         RouterHttpResponse description;
@@ -98,6 +90,7 @@ public static class FritzBoxClient
 
         var model = XmlValues.Text(document, "modelName") ?? XmlValues.Text(document, "friendlyName") ?? "FRITZ!Box";
         var session = new Session(transport, endpoint, username, password, hosts, services, model);
+        await session.VerifyCredentialsAsync(cancellationToken);
         session.Firmware = await session.TrySoftwareVersionAsync(cancellationToken);
         return session;
     }
@@ -110,6 +103,7 @@ public static class FritzBoxClient
         private readonly string _password;
         private readonly Tr64Service _hosts;
         private readonly IReadOnlyList<Tr64Service> _services;
+        private readonly DigestClient _digest;
 
         public Session(
             IRouterTransport transport,
@@ -126,7 +120,20 @@ public static class FritzBoxClient
             _password = password;
             _hosts = hosts;
             _services = services;
+            _digest = new DigestClient(transport, username, password);
             Model = model;
+        }
+
+        public async Task VerifyCredentialsAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await SoapAsync(_hosts, "GetHostNumberOfEntries", "", cancellationToken);
+            }
+            catch (RouterException ex) when (ex.Message.Contains("HTTP 401", StringComparison.Ordinal))
+            {
+                throw new RouterException("Login failed. The FRITZ!Box rejected the username or password over TR-064.");
+            }
         }
 
         public string Brand => "FRITZ!Box";
@@ -208,7 +215,7 @@ public static class FritzBoxClient
         private async Task<List<RouterClient>> ReadListAsync(string path, CancellationToken cancellationToken)
         {
             var url = Resolve(path);
-            var response = await DigestAuth.SendAsync(_transport, new RouterHttpRequest { Url = url }, _username, _password, cancellationToken);
+            var response = await _digest.SendAsync(new RouterHttpRequest { Url = url }, cancellationToken);
             if (response.StatusCode is < 200 or >= 300)
                 throw new RouterException($"The host list returned HTTP {response.StatusCode}.");
             var document = XmlValues.Parse(response.Body);
@@ -311,7 +318,7 @@ public static class FritzBoxClient
                 "<s:Body>" +
                 $"<u:{action} xmlns:u=\"{service.ServiceType}\">{inner}</u:{action}>" +
                 "</s:Body></s:Envelope>";
-            var response = await DigestAuth.SendAsync(_transport, new RouterHttpRequest
+            var response = await _digest.SendAsync(new RouterHttpRequest
             {
                 Method = HttpMethod.Post,
                 Url = control,
@@ -321,7 +328,7 @@ public static class FritzBoxClient
                 {
                     ["SOAPACTION"] = $"\"{service.ServiceType}#{action}\""
                 }
-            }, _username, _password, cancellationToken);
+            }, cancellationToken);
             if (response.StatusCode is < 200 or >= 300)
             {
                 throw new RouterException(

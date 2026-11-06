@@ -1,41 +1,24 @@
 using Avalonia.Controls;
-using Avalonia.Interactivity;
 using RedFilter.ViewModels;
 
 namespace RedFilter;
 
 public partial class MainWindow : Window
 {
-    private NetworkViewModel? _network;
-
     public MainWindow()
     {
         InitializeComponent();
     }
 
-    public MainWindow(NetworkViewModel network, RouterViewModel router) : this()
+    public MainWindow(NetworkViewModel network, WifiViewModel wifi) : this()
     {
-        _network = network;
-        NetworkPage.DataContext = network;
-        RouterPage.DataContext = router;
-        Opened += (_, _) => network.Start();
-        Loaded += (_, _) => network.Start();
-        Closed += (_, _) => _network?.Dispose();
-    }
-
-    private void ShowNetwork(object? sender, RoutedEventArgs e)
-    {
-        NetworkPage.IsVisible = true;
-        RouterPage.IsVisible = false;
-        NetworkButton.Classes.Add("active");
-        RouterButton.Classes.Remove("active");
-    }
-
-    private void ShowRouter(object? sender, RoutedEventArgs e)
-    {
-        NetworkPage.IsVisible = false;
-        RouterPage.IsVisible = true;
-        RouterButton.Classes.Add("active");
-        NetworkButton.Classes.Remove("active");
+        PcPage.DataContext = network;
+        WifiPage.DataContext = wifi;
+        Opened += async (_, _) => await wifi.StartAsync();
+        Closed += (_, _) =>
+        {
+            network.Dispose();
+            wifi.Dispose();
+        };
     }
 }

@@ -3,53 +3,31 @@
         xmlns:views="using:RedFilter.Views"
         x:Class="RedFilter.MainWindow"
         Title="RedFilter"
-        Width="1240"
-        Height="900"
-        MinWidth="1040"
-        MinHeight="760"
+        Width="1280"
+        Height="820"
+        MinWidth="980"
+        MinHeight="620"
         WindowStartupLocation="CenterScreen"
         Background="#F4F5F7"
         FontFamily="Inter, Segoe UI"
         FontSize="14">
-  <Grid ColumnDefinitions="260,*">
-    <Border Grid.Column="0" Background="#0F172A" Padding="20,28,20,24">
-      <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Spacing="14">
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <Border Width="36" Height="36" CornerRadius="8" Background="#1D4ED8">
-              <TextBlock Text="R" Foreground="White" FontSize="18" FontWeight="SemiBold"
-                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <StackPanel VerticalAlignment="Center" Spacing="0">
-              <TextBlock Text="RedFilter" Foreground="White" FontSize="20" FontWeight="SemiBold"/>
-              <TextBlock Text="This PC and your router" Foreground="#94A3B8" FontSize="12"/>
-            </StackPanel>
-          </StackPanel>
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="#0F172A" Padding="24,14">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Border Width="32" Height="32" CornerRadius="8" Background="#2563EB">
+          <TextBlock Text="R" Foreground="White" FontSize="16" FontWeight="SemiBold"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="RedFilter" Foreground="White" FontSize="18" FontWeight="SemiBold"/>
+          <TextBlock Text="Prioriza tus programas y controla quién usa tu Wi-Fi" Foreground="#94A3B8" FontSize="12"/>
         </StackPanel>
-
-        <TextBlock DockPanel.Dock="Bottom" Foreground="#94A3B8" FontSize="12" TextWrapping="Wrap" LineHeight="18"
-                   Text="Talks only to this computer and the router address you enter."/>
-
-        <StackPanel Margin="0,28,0,24" Spacing="6">
-          <Button x:Name="NetworkButton" Classes="nav active" Click="ShowNetwork">
-            <StackPanel Spacing="2">
-              <TextBlock Classes="title" Text="Network"/>
-              <TextBlock Classes="hint" Text="Programs on this PC"/>
-            </StackPanel>
-          </Button>
-          <Button x:Name="RouterButton" Classes="nav" Click="ShowRouter">
-            <StackPanel Spacing="2">
-              <TextBlock Classes="title" Text="Router"/>
-              <TextBlock Classes="hint" Text="Your home router"/>
-            </StackPanel>
-          </Button>
-        </StackPanel>
-      </DockPanel>
+      </StackPanel>
     </Border>
 
-    <Grid Grid.Column="1" Margin="24">
-      <views:NetworkView x:Name="NetworkPage"/>
-      <views:RouterView x:Name="RouterPage" IsVisible="False"/>
+    <Grid Margin="20" ColumnDefinitions="5*,16,6*">
+      <views:PcView x:Name="PcPage" Grid.Column="0"/>
+      <views:WifiView x:Name="WifiPage" Grid.Column="2"/>
     </Grid>
-  </Grid>
+  </DockPanel>
 </Window>

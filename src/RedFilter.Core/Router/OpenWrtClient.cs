@@ -116,7 +116,10 @@ public static class OpenWrtClient
         if (response.StatusCode is < 200 or >= 300)
         {
             throw new RouterException(
-                $"OpenWrt ubus returned HTTP {response.StatusCode}. {SecretText.Excerpt(response.Body, password)}");
+                $"OpenWrt ubus returned HTTP {response.StatusCode}. {SecretText.Excerpt(response.Body, password)}")
+            {
+                SessionExpired = response.StatusCode is 401 or 403
+            };
         }
 
         return response.Body;
@@ -341,6 +344,8 @@ public static class OpenWrtClient
             });
             var response = await PostAsync(_transport, _endpoint, body, _password, cancellationToken);
             using var document = Parse(response);
+            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("error", out _))
+                Ubus.Unwrap(response, _password, login: false); // throws, marking an expired session
             if (!document.RootElement.TryGetProperty("result", out var result))
                 throw new RouterException("OpenWrt ubus list did not return a result. " + SecretText.Excerpt(response, _password));
 
@@ -444,6 +449,8 @@ public static class OpenWrtClient
 
 internal static class Ubus
 {
+    private static readonly JsonElement EmptyObject = JsonDocument.Parse("{}").RootElement.Clone();
+
     public static JsonElement Unwrap(string json, string? secret, bool login)
     {
         JsonDocument document;
@@ -456,29 +463,41 @@ internal static class Ubus
             throw new RouterException("The address did not return OpenWrt ubus JSON. " + SecretText.Excerpt(json, secret));
         }
 
-        var root = document.RootElement;
-        if (root.TryGetProperty("error", out var error))
-            throw new RouterException("OpenWrt ubus error: " + SecretText.Excerpt(error.ToString(), secret));
-        if (!root.TryGetProperty("result", out var result))
-            throw new RouterException("OpenWrt ubus response had no result. " + SecretText.Excerpt(json, secret));
-        if (result.ValueKind == JsonValueKind.Array)
+        using (document)
         {
-            if (result.GetArrayLength() == 0)
-                throw new RouterException("OpenWrt ubus returned an empty result.");
-            var code = result[0].GetInt32();
-            if (code != 0)
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new RouterException("The address did not return an OpenWrt ubus object. " + SecretText.Excerpt(json, secret));
+            if (root.TryGetProperty("error", out var error))
             {
-                throw new RouterException(login && code == 6
-                    ? "Login failed. OpenWrt rejected the username or password (ubus status 6)."
-                    : Status(code));
+                // -32002 is "Access denied": the session id is no longer valid.
+                var expired = !login && error.ValueKind == JsonValueKind.Object &&
+                              error.TryGetProperty("code", out var code) && code.TryGetInt32(out var value) && value == -32002;
+                throw new RouterException("OpenWrt ubus error: " + SecretText.Excerpt(error.ToString(), secret)) { SessionExpired = expired };
             }
 
-            if (result.GetArrayLength() == 1)
-                return default;
-            return result[1].Clone();
-        }
+            if (!root.TryGetProperty("result", out var result))
+                throw new RouterException("OpenWrt ubus response had no result. " + SecretText.Excerpt(json, secret));
+            if (result.ValueKind == JsonValueKind.Array)
+            {
+                if (result.GetArrayLength() == 0)
+                    throw new RouterException("OpenWrt ubus returned an empty result.");
+                if (!result[0].TryGetInt32(out var status))
+                    throw new RouterException("OpenWrt ubus returned a status that is not a number.");
+                if (status != 0)
+                {
+                    if (login && status == 6)
+                        throw new RouterException("Login failed. OpenWrt rejected the username or password (ubus status 6).");
+                    throw new RouterException(Status(status)) { SessionExpired = !login && status == 6 };
+                }
 
-        return result.Clone();
+                // A call that only returns [0] succeeded without data. An empty object keeps callers'
+                // TryGetProperty checks safe instead of throwing on a default JsonElement.
+                return result.GetArrayLength() == 1 ? EmptyObject : result[1].Clone();
+            }
+
+            return result.Clone();
+        }
     }
 
     private static string Status(int code) => code switch
@@ -486,7 +505,7 @@ internal static class Ubus
         2 => "OpenWrt rejected the arguments (ubus status 2, invalid argument).",
         3 => "OpenWrt does not provide that method (ubus status 3, not found).",
         4 => "OpenWrt could not find that object (ubus status 4, not found).",
-        6 => "OpenWrt denied the request (ubus status 6, permission denied).",
+        6 => "OpenWrt denied the request (ubus status 6, permission denied). The session may have expired.",
         7 => "OpenWrt timed out (ubus status 7).",
         8 => "OpenWrt does not support that operation (ubus status 8).",
         _ => $"OpenWrt returned ubus status {code}."

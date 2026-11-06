@@ -17,40 +17,6 @@
       <Setter Property="MinWidth" Value="120"/>
     </Style>
 
-    <Style Selector="Button.nav">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#E5E7EB"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="HorizontalContentAlignment" Value="Left"/>
-      <Setter Property="Padding" Value="14,10"/>
-      <Setter Property="FontSize" Value="15"/>
-      <Setter Property="CornerRadius" Value="8"/>
-      <Setter Property="BorderThickness" Value="3,0,0,0"/>
-      <Setter Property="BorderBrush" Value="Transparent"/>
-    </Style>
-    <Style Selector="Button.nav TextBlock">
-      <Setter Property="Foreground" Value="#E5E7EB"/>
-    </Style>
-    <Style Selector="Button.nav TextBlock.hint">
-      <Setter Property="Foreground" Value="#9CA3AF"/>
-      <Setter Property="FontSize" Value="12"/>
-    </Style>
-    <Style Selector="Button.nav:pointerover">
-      <Setter Property="Background" Value="#1E293B"/>
-    </Style>
-    <Style Selector="Button.nav.active">
-      <Setter Property="Background" Value="#1E293B"/>
-      <Setter Property="BorderBrush" Value="#93C5FD"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-    </Style>
-    <Style Selector="Button.nav.active TextBlock.title">
-      <Setter Property="Foreground" Value="White"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-    </Style>
-    <Style Selector="Button.nav.active TextBlock.hint">
-      <Setter Property="Foreground" Value="#CBD5E1"/>
-    </Style>
-
     <Style Selector="Border.card">
       <Setter Property="Background" Value="White"/>
       <Setter Property="BorderBrush" Value="#E5E7EB"/>
@@ -58,31 +24,72 @@
       <Setter Property="CornerRadius" Value="12"/>
       <Setter Property="Padding" Value="16"/>
     </Style>
-    <Style Selector="Border.banner">
+    <Style Selector="Border.owner">
       <Setter Property="Background" Value="#F8FAFC"/>
-      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="BorderBrush" Value="#E2E8F0"/>
       <Setter Property="BorderThickness" Value="1"/>
     </Style>
-    <Style Selector="Border.banner.owning">
+    <Style Selector="Border.owner.on">
       <Setter Property="Background" Value="#FFFBEB"/>
-      <Setter Property="BorderBrush" Value="#D97706"/>
+      <Setter Property="BorderBrush" Value="#F59E0B"/>
       <Setter Property="BorderThickness" Value="4,1,1,1"/>
     </Style>
-    <Style Selector="Border.table-card">
-      <Setter Property="Background" Value="White"/>
-      <Setter Property="BorderBrush" Value="#E5E7EB"/>
+    <Style Selector="Border.warn">
+      <Setter Property="Background" Value="#FFFBEB"/>
+      <Setter Property="BorderBrush" Value="#FCD34D"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="12"/>
+    </Style>
+    <Style Selector="Border.row">
+      <Setter Property="Padding" Value="20,10"/>
+      <Setter Property="BorderBrush" Value="#F1F5F9"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="Background" Value="White"/>
+    </Style>
+    <Style Selector="Border.row:pointerover">
+      <Setter Property="Background" Value="#F8FAFC"/>
+    </Style>
+    <Style Selector="Border.row.owner-row">
+      <Setter Property="Background" Value="#FFFBEB"/>
+    </Style>
+    <Style Selector="Border.badge">
+      <Setter Property="Background" Value="#EEF2FF"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="6,1"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Border.badge TextBlock">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="#3730A3"/>
+    </Style>
+    <Style Selector="TextBlock.small">
+      <Setter Property="Foreground" Value="#6B7280"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style Selector="TextBlock.rank">
+      <Setter Property="Foreground" Value="#94A3B8"/>
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.small-btn">
+      <Setter Property="MinHeight" Value="32"/>
+      <Setter Property="Padding" Value="12,4"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="MinWidth" Value="0"/>
+    </Style>
+    <Style Selector="Button.danger">
+      <Setter Property="Foreground" Value="#B91C1C"/>
+      <Setter Property="BorderBrush" Value="#FECACA"/>
+      <Setter Property="Background" Value="#FEF2F2"/>
+    </Style>
+    <Style Selector="Button.link">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Foreground" Value="#2563EB"/>
       <Setter Property="Padding" Value="0"/>
-      <Setter Property="ClipToBounds" Value="True"/>
+      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="FontSize" Value="13"/>
     </Style>
-    <Style Selector="Border.toolbar">
-      <Setter Property="BorderBrush" Value="#E5E7EB"/>
-      <Setter Property="BorderThickness" Value="0,1,0,0"/>
-      <Setter Property="Padding" Value="0,16,0,0"/>
-      <Setter Property="Margin" Value="0,16,0,0"/>
-    </Style>
-
     <Style Selector="TextBlock.kicker">
       <Setter Property="Foreground" Value="#6B7280"/>
       <Setter Property="FontSize" Value="12"/>
@@ -124,30 +131,8 @@
       <Setter Property="CornerRadius" Value="8"/>
     </Style>
 
-    <Style Selector="TableView">
-      <Setter Property="Background" Value="White"/>
-      <Setter Property="BorderThickness" Value="0"/>
-    </Style>
-    <Style Selector="TableViewColumnHeader">
-      <Setter Property="Background" Value="#F8FAFC"/>
-      <Setter Property="Foreground" Value="#374151"/>
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="Padding" Value="16,10"/>
-      <Setter Property="MinHeight" Value="40"/>
-    </Style>
-    <Style Selector="TableViewCell">
-      <Setter Property="Padding" Value="16,0"/>
-      <Setter Property="FontSize" Value="14"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-    </Style>
-    <Style Selector="TableViewRow">
-      <Setter Property="MinHeight" Value="44"/>
-    </Style>
   </Application.Styles>
   <Application.Resources>
     <Color x:Key="SystemAccentColor">#1D4ED8</Color>
-    <conv:OwnerRowBrushConverter x:Key="OwnerRowBrush"/>
-    <conv:OwnerFontWeightConverter x:Key="OwnerFontWeight"/>
   </Application.Resources>
 </Application>

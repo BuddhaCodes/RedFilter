@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RedFilter.ViewModels"
+             x:Class="RedFilter.Views.PcView"
+             x:DataType="vm:NetworkViewModel">
+  <Border Classes="card" Padding="0">
+    <DockPanel>
+      <StackPanel DockPanel.Dock="Top" Margin="20,18,20,12" Spacing="4">
+        <TextBlock Classes="kicker" Text="ESTE PC"/>
+        <TextBlock Classes="section" Text="Dar prioridad a un programa"/>
+      </StackPanel>
+
+      <!-- Who has priority now -->
+      <Border DockPanel.Dock="Top" Margin="20,0,20,12" Padding="14,12" CornerRadius="10"
+              Classes="owner" Classes.on="{Binding FilterOn}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="{Binding OwnerText}" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <Button Grid.Column="1" Content="Quitar prioridad" Margin="12,0,0,0"
+                  IsVisible="{Binding FilterOn}" IsEnabled="{Binding CanTurnOff}" Click="TurnOff_Click"/>
+        </Grid>
+      </Border>
+
+      <Border DockPanel.Dock="Top" Margin="20,0,20,12" Padding="12,10" CornerRadius="10" Classes="warn"
+              IsVisible="{Binding VpnActive}">
+        <TextBlock Text="{Binding VpnNote}" Classes="note" Foreground="#92400E"/>
+      </Border>
+
+      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,0,20,12" Spacing="10">
+        <TextBlock Text="Los demás, limitados a" VerticalAlignment="Center" Classes="field"/>
+        <ComboBox ItemsSource="{Binding ThrottleChoices}" SelectedItem="{Binding Throttle}" MinWidth="170">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ThrottleChoice">
+              <TextBlock Text="{Binding Label}"/>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </StackPanel>
+
+      <TextBlock DockPanel.Dock="Bottom" Margin="20,8,20,16" Text="{Binding Status}" Classes="note"/>
+
+      <Border BorderBrush="#E5E7EB" BorderThickness="0,1,0,1">
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding Programs}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ProgramRow">
+                <Border Classes="row" Classes.owner-row="{Binding IsOwner}">
+                  <Grid ColumnDefinitions="*,Auto,Auto">
+                    <StackPanel VerticalAlignment="Center" Spacing="1">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Text="{Binding Path}" Classes="small" TextTrimming="PathSegmentEllipsis" ToolTip.Tip="{Binding Path}"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding Rate}" Classes="small" VerticalAlignment="Center" Margin="12,0"/>
+                    <Button Grid.Column="2" Content="Priorizar" Classes="accent small-btn"
+                            IsVisible="{Binding CanPrioritize}" Click="Prioritize_Click" Tag="{Binding}"/>
+                    <TextBlock Grid.Column="2" Text="Con prioridad" Foreground="#B45309" FontWeight="SemiBold"
+                               VerticalAlignment="Center" IsVisible="{Binding IsOwner}"/>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+    </DockPanel>
+  </Border>
+</UserControl>

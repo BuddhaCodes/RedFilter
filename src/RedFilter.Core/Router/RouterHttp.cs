@@ -37,6 +37,10 @@ public sealed class RouterHttpResponse
 public interface IRouterTransport : IDisposable
 {
     bool UsedUntrustedCertificate { get; }
+
+    /// <summary>SHA-256 of the certificate the router presented over HTTPS, if any.</summary>
+    string? CertificateSha256 => null;
+
     Task<RouterHttpResponse> SendAsync(RouterHttpRequest request, CancellationToken cancellationToken);
 }
 
@@ -45,11 +49,17 @@ public sealed class HttpRouterTransport : IRouterTransport
     private const int MaxBodyChars = 1_000_000;
     private readonly HttpClient _client;
     private readonly string _host;
+    private readonly string? _pinnedSha256;
     private bool _usedUntrustedCertificate;
+    private bool _pinMismatch;
+    private string? _certificateSha256;
 
-    public HttpRouterTransport(string host)
+    /// <param name="pinnedSha256">The certificate fingerprint saved after the last successful sign-in to this host.
+    /// An untrusted certificate is accepted only when it matches, or when nothing is saved yet.</param>
+    public HttpRouterTransport(string host, string? pinnedSha256 = null)
     {
         _host = host;
+        _pinnedSha256 = string.IsNullOrWhiteSpace(pinnedSha256) ? null : pinnedSha256.Trim();
         var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
@@ -64,6 +74,7 @@ public sealed class HttpRouterTransport : IRouterTransport
     }
 
     public bool UsedUntrustedCertificate => _usedUntrustedCertificate;
+    public string? CertificateSha256 => _certificateSha256;
 
     public async Task<RouterHttpResponse> SendAsync(RouterHttpRequest request, CancellationToken cancellationToken)
     {
@@ -94,13 +105,22 @@ public sealed class HttpRouterTransport : IRouterTransport
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
+                if (_pinMismatch)
+                {
+                    throw new RouterException(
+                        $"The HTTPS certificate of {current.Url.Host} is not the one saved at the last successful sign-in, so RedFilter did not send anything. " +
+                        "If you replaced or reset the router, choose Forget certificate and test again. Otherwise someone on the network may be intercepting the connection.",
+                        ex);
+                }
+
                 throw new RouterException($"Cannot reach {current.Url.Host}. {ex.Message}", ex);
             }
 
             using (response)
             {
                 if (response.StatusCode is HttpStatusCode.Moved or HttpStatusCode.Redirect
-                    or HttpStatusCode.RedirectMethod or HttpStatusCode.PermanentRedirect
+                        or HttpStatusCode.RedirectMethod or HttpStatusCode.TemporaryRedirect
+                        or HttpStatusCode.PermanentRedirect
                     && response.Headers.Location != null)
                 {
                     var next = response.Headers.Location.IsAbsoluteUri
@@ -110,6 +130,12 @@ public sealed class HttpRouterTransport : IRouterTransport
                     {
                         throw new RouterException(
                             $"The router redirected to {next.Host}, which is a different host. RedFilter will not follow that redirect.");
+                    }
+
+                    if (current.Url.Scheme == Uri.UriSchemeHttps && next.Scheme == Uri.UriSchemeHttp)
+                    {
+                        throw new RouterException(
+                            "The router redirected from HTTPS to plain HTTP. RedFilter will not downgrade the connection.");
                     }
 
                     current = new RouterHttpRequest
@@ -152,18 +178,29 @@ public sealed class HttpRouterTransport : IRouterTransport
 
     private bool ValidateCertificate(object sender, System.Security.Cryptography.X509Certificates.X509Certificate? certificate, System.Security.Cryptography.X509Certificates.X509Chain? chain, SslPolicyErrors errors)
     {
+        var fingerprint = certificate == null ? null : CertificateFingerprint(certificate.GetRawCertData());
+        _certificateSha256 = fingerprint;
         if (errors == SslPolicyErrors.None)
             return true;
-        // This handler only dials the configured router. Home routers usually present a self-signed certificate.
-        if (sender is SslStream stream &&
-            (stream.TargetHostName.Length == 0 || stream.TargetHostName.Equals(_host, StringComparison.OrdinalIgnoreCase)))
+
+        // This handler only dials the configured router. Home routers usually present a self-signed
+        // certificate, so it is trusted on first use and pinned after a successful sign-in.
+        if (sender is not SslStream stream ||
+            !(stream.TargetHostName.Length == 0 || stream.TargetHostName.Equals(_host, StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        if (_pinnedSha256 != null && !string.Equals(_pinnedSha256, fingerprint, StringComparison.OrdinalIgnoreCase))
         {
-            _usedUntrustedCertificate = true;
-            return true;
+            _pinMismatch = true;
+            return false;
         }
 
-        return false;
+        _usedUntrustedCertificate = true;
+        return true;
     }
+
+    public static string CertificateFingerprint(byte[] rawCertificate) =>
+        Convert.ToHexString(SHA256.HashData(rawCertificate));
 
     private static async Task<(string Text, bool Truncated)> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
@@ -208,14 +245,14 @@ internal static class DigestAuth
         return await transport.SendAsync(request.WithHeader("Authorization", header), cancellationToken);
     }
 
-    public static string BuildHeader(string wwwAuthenticate, string username, string password, string method, string uri)
+    public static string BuildHeader(string wwwAuthenticate, string username, string password, string method, string uri, int count = 1)
     {
         var fields = Parse(wwwAuthenticate);
         if (!fields.TryGetValue("realm", out var realm) || !fields.TryGetValue("nonce", out var nonce))
             throw new RouterException("The router sent a digest challenge without a realm and nonce.");
 
         var cnonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
-        const string nc = "00000001";
+        var nc = count.ToString("x8", System.Globalization.CultureInfo.InvariantCulture);
         var qop = fields.TryGetValue("qop", out var qopValue)
             ? qopValue.Split(',')[0].Trim()
             : "";
@@ -265,6 +302,67 @@ internal static class DigestAuth
 
     private static string Quote(string value) =>
         "\"" + value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+}
+
+/// <summary>
+/// Digest authentication that reuses the last challenge, so each request after the first costs one
+/// round trip instead of two. A stale or rejected nonce falls back to a fresh challenge once.
+/// </summary>
+internal sealed class DigestClient
+{
+    private readonly IRouterTransport _transport;
+    private readonly string _username;
+    private readonly string _password;
+    private string? _challenge;
+    private int _count;
+
+    public DigestClient(IRouterTransport transport, string username, string password)
+    {
+        _transport = transport;
+        _username = username;
+        _password = password;
+    }
+
+    public async Task<RouterHttpResponse> SendAsync(RouterHttpRequest request, CancellationToken cancellationToken)
+    {
+        RouterHttpResponse first;
+        if (_challenge != null)
+        {
+            _count++;
+            first = await _transport.SendAsync(Authorize(request, _challenge, _count), cancellationToken);
+        }
+        else
+        {
+            first = await _transport.SendAsync(request, cancellationToken);
+        }
+
+        if (first.StatusCode != 401)
+            return first;
+
+        var challenge = first.Authenticate.FirstOrDefault(value =>
+            value.StartsWith("Digest", StringComparison.OrdinalIgnoreCase));
+        if (challenge == null)
+        {
+            _challenge = null;
+            throw new RouterException(
+                $"The router refused access (HTTP 401) and did not offer digest authentication. {SecretText.Excerpt(first.Body, _password)}");
+        }
+
+        _challenge = challenge;
+        _count = 1;
+        var second = await _transport.SendAsync(Authorize(request, challenge, _count), cancellationToken);
+        if (second.StatusCode == 401)
+        {
+            _challenge = null;
+            throw new RouterException("The router rejected the username or password (HTTP 401).");
+        }
+
+        return second;
+    }
+
+    private RouterHttpRequest Authorize(RouterHttpRequest request, string challenge, int count) =>
+        request.WithHeader("Authorization",
+            DigestAuth.BuildHeader(challenge, _username, _password, request.Method.Method, request.Url.PathAndQuery, count));
 }
 
 internal static class XmlValues

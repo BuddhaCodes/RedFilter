@@ -38,25 +38,37 @@ public partial class App : Application
             var store = new SettingsStore(folder, new DpapiSecretProtector());
             var prompt = new AvaloniaUserPrompt();
             QosLaunch.TryParse(desktop.Args ?? [], out var pendingLaunch);
+            var elevated = AdminCheck.IsElevated();
             var network = new NetworkViewModel(
-                new WindowsProcessNetworkSource(),
+                new WindowsProcessNetworkSource(elevated),
                 new PowerShellQosPolicyStore(),
                 store,
-                AdminCheck.IsElevated(),
+                elevated,
                 pendingLaunch,
                 new WindowsQosElevation(),
                 Shutdown,
                 prompt);
-            var router = new RouterViewModel(
+            var local = LocalNetworkInfo.Read();
+            network.VpnActive = local.VpnActive;
+            network.VpnName = local.VpnName ?? "";
+            var wifi = new WifiViewModel(
                 store,
-                endpoint => new HttpRouterTransport(endpoint.Host),
-                WindowsGatewayLookup.TryGetDefaultGateway,
-                prompt);
-            desktop.MainWindow = new MainWindow(network, router);
+                endpoint => new HttpRouterTransport(endpoint.Host, PinnedCertificate(store, endpoint.Host)),
+                prompt,
+                local);
+            desktop.MainWindow = new MainWindow(network, wifi);
             network.Start();
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static string? PinnedCertificate(SettingsStore store, string host)
+    {
+        var settings = store.Load();
+        return string.Equals(settings.RouterCertificateHost, host, StringComparison.OrdinalIgnoreCase)
+            ? settings.RouterCertificateSha256
+            : null;
     }
 
     private static void Shutdown()

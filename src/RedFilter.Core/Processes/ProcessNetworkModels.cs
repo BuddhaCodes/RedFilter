@@ -12,7 +12,8 @@ public sealed record ProcessNetworkRow(
 public sealed record ProcessNetworkSnapshot(
     IReadOnlyList<ProcessNetworkRow> Processes,
     bool ThroughputAvailable,
-    string? Warning);
+    string? Warning,
+    bool ConnectionsAvailable = false);
 
 public interface IProcessNetworkSource
 {

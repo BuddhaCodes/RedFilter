@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using RedFilter.Core.Processes;
 using RedFilter.Core.Text;
@@ -51,7 +52,7 @@ public static class QosPolicyPlanner
         "svchost", "fontdrvhost", "dwm", "sihost", "taskhostw", "RuntimeBroker",
         "dllhost", "conhost", "WmiPrvSE", "spoolsv", "SearchIndexer", "MsMpEng",
         "SecurityHealthService", "SecurityHealthSystray", "SgrmBroker", "NisSrv",
-        "dasHost", "RedFilter", "powershell", "pwsh", "smartscreen", "csrss"
+        "dasHost", "RedFilter", "powershell", "pwsh", "smartscreen"
     };
 
     public static long NormalizeThrottle(long bitsPerSecond)
@@ -63,18 +64,24 @@ public static class QosPolicyPlanner
         return bitsPerSecond;
     }
 
+    /// <param name="keepLimited">Program paths already limited in this filter session. They stay limited
+    /// even when they are idle or not running, so the policy set only grows and Windows QoS is not
+    /// rewritten every time a short-lived program exits.</param>
+    /// <param name="requireActivity">When connection counts are available, only programs with TCP connections
+    /// or UDP endpoints get a new limit. Without counts every program with a path is limited.</param>
     public static QosPlan Build(
         ProcessNetworkRow owner,
         IReadOnlyList<ProcessNetworkRow> processes,
         long throttleBitsPerSecond,
-        string? thisProgramPath)
+        string? thisProgramPath,
+        IReadOnlyCollection<string>? keepLimited = null,
+        bool requireActivity = false)
     {
         if (string.IsNullOrWhiteSpace(owner.ExecutablePath))
         {
             throw new InvalidOperationException(
-                $"RedFilter cannot read the program path for {owner.Name} (PID {owner.Pid}). " +
-                "Windows QoS matches a program path, so this process cannot take the network. " +
-                "Choose a program whose path is visible.");
+                $"Windows no deja ver la ruta de {owner.Name} (PID {owner.Pid}), y la prioridad se aplica por ruta. " +
+                "Elige otro programa, o abre RedFilter como administrador.");
         }
 
         var throttle = NormalizeThrottle(throttleBitsPerSecond);
@@ -87,74 +94,97 @@ public static class QosPolicyPlanner
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ownerPath };
         if (!string.IsNullOrWhiteSpace(thisProgramPath))
             seenPaths.Add(thisProgramPath.Trim());
+        var sticky = new HashSet<string>(
+            (keepLimited ?? Array.Empty<string>()).Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => path.Trim()),
+            StringComparer.OrdinalIgnoreCase);
 
         var skippedSystem = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var missingPath = 0;
+        var serviceHostActive = false;
 
-        foreach (var process in processes)
+        foreach (var process in processes.OrderBy(p => p.ExecutablePath, StringComparer.OrdinalIgnoreCase))
         {
             if (process.Pid == owner.Pid)
                 continue;
+            var active = process.TcpConnections + process.UdpEndpoints > 0;
             if (IsProtected(process))
             {
-                if (process.TcpConnections + process.UdpEndpoints > 0)
+                if (active)
+                {
                     skippedSystem.Add(process.Name);
+                    if (process.Name.Equals("svchost", StringComparison.OrdinalIgnoreCase))
+                        serviceHostActive = true;
+                }
+
                 continue;
             }
 
             if (string.IsNullOrWhiteSpace(process.ExecutablePath))
             {
-                if (process.TcpConnections + process.UdpEndpoints > 0)
+                if (active)
                     missingPath++;
                 continue;
             }
 
             var path = process.ExecutablePath.Trim();
+            if (requireActivity && !active && !sticky.Contains(path))
+                continue;
             if (!seenPaths.Add(path))
                 continue;
 
-            policies.Add(new QosPolicySpec(
-                LimitName(path),
-                path,
-                false,
-                BackgroundDscp,
-                throttle));
+            policies.Add(new QosPolicySpec(LimitName(path), path, false, BackgroundDscp, throttle));
+        }
+
+        // Keep earlier limits for programs that went idle or exited.
+        foreach (var path in sticky.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!seenPaths.Add(path))
+                continue;
+            if (NeverThrottle.Contains(FileStem(path)))
+                continue;
+            policies.Add(new QosPolicySpec(LimitName(path), path, false, BackgroundDscp, throttle));
         }
 
         var notes = new List<string>
         {
-            $"Windows QoS matches the program path, so every process running {Path.GetFileName(ownerPath)} is included.",
-            $"Outbound traffic from other ordinary programs is limited to {RateText.BitsPerSecond(throttle)}. " +
-            "This limit does not cap downloads. Windows cannot shape inbound bytes with this policy.",
-            "The policies live in the active QoS store. They stay in effect after you close RedFilter, and Windows drops them on reboot. Turn the filter off to restore sharing sooner."
+            $"Prioridad para {Path.GetFileName(ownerPath)} (todas sus ventanas y procesos).",
+            $"Los demás programas quedan limitados a {RateText.BitsPerSecond(throttle)} de subida. Las descargas no se limitan.",
+            "La marca de prioridad (DSCP " + OwnerDscp + ") solo ayuda si el router la respeta.",
+            "Sigue activo aunque cierres RedFilter; se borra al reiniciar Windows o con \"Quitar prioridad\"."
         };
 
         if (IsProtected(owner))
-        {
-            notes.Add(
-                $"{owner.Name} is a Windows component. Prioritizing it marks that program path, " +
-                "and RedFilter still will not throttle the rest of the system list.");
-        }
+            notes.Add($"{owner.Name} es un componente de Windows; se le da prioridad, pero el resto del sistema no se limita.");
 
         if (skippedSystem.Count > 0)
         {
             var names = string.Join(", ", skippedSystem.OrderBy(n => n, StringComparer.OrdinalIgnoreCase));
-            notes.Add("Left unthrottled so Windows keeps working: " + names + ".");
+            notes.Add("No se limitan, para que Windows siga funcionando: " + names + ".");
+        }
+
+        if (serviceHostActive)
+        {
+            notes.Add(
+                "Windows Update y la Optimización de distribución (Delivery Optimization) van dentro de svchost y no se pueden limitar desde aquí. " +
+                "Para frenarlas: Configuración > Windows Update > Opciones avanzadas > Optimización de distribución.");
         }
 
         if (missingPath > 0)
-        {
-            notes.Add(
-                $"{missingPath} process{(missingPath == 1 ? "" : "es")} had network activity but no readable program path, so they were left unchanged.");
-        }
+            notes.Add($"{missingPath} proceso{(missingPath == 1 ? "" : "s")} con red sin ruta legible se dejaron igual.");
 
         var limited = policies.Count - 1;
         notes.Insert(1, limited == 0
-            ? "No other ordinary program had a usable path, so only the priority mark was applied."
-            : $"{limited} other program path{(limited == 1 ? "" : "s")} will be limited.");
+            ? "Ningún otro programa usa la red ahora; solo se aplicó la prioridad."
+            : $"{limited} programa{(limited == 1 ? "" : "s")} más quedan limitados.");
 
         return new QosPlan(owner.Name, owner.Pid, ownerPath, throttle, policies, notes);
     }
+
+    /// <summary>A stable fingerprint of the policies, so callers can skip PowerShell when nothing changed.</summary>
+    public static string Fingerprint(IReadOnlyList<QosPolicySpec> policies) =>
+        string.Join("\n", policies
+            .OrderBy(policy => policy.Name, StringComparer.Ordinal)
+            .Select(policy => $"{policy.Name}|{policy.AppPath.ToUpperInvariant()}|{policy.Dscp}|{policy.ThrottleBitsPerSecond}"));
 
     public static bool IsProtected(ProcessNetworkRow process)
     {
@@ -162,8 +192,15 @@ public static class QosPolicyPlanner
             return true;
         if (string.IsNullOrWhiteSpace(process.ExecutablePath))
             return false;
-        var file = Path.GetFileNameWithoutExtension(process.ExecutablePath);
-        return NeverThrottle.Contains(file);
+        return NeverThrottle.Contains(FileStem(process.ExecutablePath));
+    }
+
+    // Windows paths are parsed the same way on every OS, so planning does not depend on where it runs.
+    private static string FileStem(string path)
+    {
+        var file = path[(path.LastIndexOfAny(['\\', '/']) + 1)..];
+        var dot = file.LastIndexOf('.');
+        return dot > 0 ? file[..dot] : file;
     }
 
     public static string LimitName(string appPath)
@@ -216,95 +253,133 @@ public static class NetQosScript
 {
     private static readonly Regex SafeName = new(@"^RedFilter-[A-Za-z0-9-]+$", RegexOptions.CultureInvariant);
 
-    public static string Query() =>
-        """
-        $ErrorActionPreference = 'Stop'
-        Import-Module NetQos -ErrorAction Stop
-        $rows = @(Get-NetQosPolicy -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'RedFilter-*' })
-        if ($rows.Count -eq 0) { Write-Output '[]'; return }
-        $rows | ForEach-Object {
-          [PSCustomObject]@{
-            Name = [string]$_.Name
-            AppPathNameMatchCondition = [string]$_.AppPathNameMatchCondition
-            ThrottleRateActionBitsPerSecond = $_.ThrottleRateActionBitsPerSecond
-            DSCPAction = $_.DSCPAction
-          }
-        } | ConvertTo-Json -Compress
-        """;
-
-    public static string RemoveAll() =>
-        """
-        $ErrorActionPreference = 'Stop'
-        Import-Module NetQos -ErrorAction Stop
-        $rows = @(Get-NetQosPolicy -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'RedFilter-*' })
-        foreach ($row in $rows) {
-          Remove-NetQosPolicy -Name $row.Name -PolicyStore ActiveStore -Confirm:$false
-        }
-        Write-Output ('OK removed=' + $rows.Count)
-        """;
-
-    public static string Apply(IReadOnlyList<string> remove, IReadOnlyList<QosPolicySpec> add)
+    private static readonly JsonSerializerOptions PayloadOptions = new()
     {
-        var builder = new StringBuilder();
-        builder.AppendLine("$ErrorActionPreference = 'Stop'");
-        builder.AppendLine("Import-Module NetQos -ErrorAction Stop");
-        builder.AppendLine("$removed = 0");
-        builder.AppendLine("$applied = 0");
-        if (remove.Count > 0)
-        {
-            builder.AppendLine("$removeNames = @(");
-            foreach (var name in remove)
-                builder.AppendLine($"  '{RequireName(name)}'");
-            builder.AppendLine(")");
-            builder.AppendLine("Get-NetQosPolicy -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Where-Object { $removeNames -contains $_.Name } | ForEach-Object {");
-            builder.AppendLine("  Remove-NetQosPolicy -Name $_.Name -PolicyStore ActiveStore -Confirm:$false");
-            builder.AppendLine("  $removed++");
-            builder.AppendLine("}");
-        }
+        // The default encoder escapes every non-ASCII character (including the typographic quotes
+        // PowerShell treats as string delimiters), so the payload is plain ASCII on stdin.
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default
+    };
 
-        foreach (var policy in add)
+    // The script text never contains a program path or a policy name. Those arrive as JSON on stdin,
+    // so a crafted path cannot change what the elevated PowerShell runs.
+    public const string Script =
+        """
+        $ErrorActionPreference = 'Stop'
+        try {
+          Import-Module NetQos -ErrorAction Stop
+          $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
+          function Get-RedFilterPolicy {
+            @(Get-NetQosPolicy -PolicyStore ActiveStore -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'RedFilter-*' })
+          }
+          function Write-AsciiJson($value) {
+            $json = ConvertTo-Json -InputObject $value -Compress -Depth 4
+            [regex]::Replace($json, '[^\u0000-\u007F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+          }
+          switch ([string]$request.op) {
+            'query' {
+              $rows = @(Get-RedFilterPolicy | ForEach-Object {
+                [PSCustomObject]@{
+                  Name = [string]$_.Name
+                  AppPathNameMatchCondition = [string]$_.AppPathNameMatchCondition
+                  ThrottleRateActionBitsPerSecond = $_.ThrottleRateActionBitsPerSecond
+                  DSCPAction = $_.DSCPAction
+                }
+              })
+              Write-AsciiJson -value $rows
+            }
+            'clear' {
+              $rows = Get-RedFilterPolicy
+              foreach ($row in $rows) {
+                Remove-NetQosPolicy -Name $row.Name -PolicyStore ActiveStore -Confirm:$false
+              }
+              Write-Output ('OK removed=' + $rows.Count)
+            }
+            'apply' {
+              $removed = 0
+              $applied = 0
+              $removeNames = @($request.remove | Where-Object { $_ } | ForEach-Object { [string]$_ })
+              if ($removeNames.Count -gt 0) {
+                foreach ($row in (Get-RedFilterPolicy | Where-Object { $removeNames -contains $_.Name })) {
+                  Remove-NetQosPolicy -Name $row.Name -PolicyStore ActiveStore -Confirm:$false
+                  $removed++
+                }
+              }
+              foreach ($policy in @($request.add)) {
+                if ($null -eq $policy) { continue }
+                $name = [string]$policy.name
+                if ($name -cnotmatch '^RedFilter-[A-Za-z0-9-]+$') { throw 'Refusing an unexpected QoS policy name.' }
+                $settings = @{
+                  Name = $name
+                  AppPathNameMatchCondition = [string]$policy.path
+                  DSCPAction = [sbyte]$policy.dscp
+                  NetworkProfile = 'All'
+                  PolicyStore = 'ActiveStore'
+                  Confirm = $false
+                }
+                if ($policy.owner) {
+                  $settings.Precedence = [byte]10
+                } else {
+                  $rate = [uint64]$policy.rate
+                  if ($rate -lt 64000) { throw 'Refusing a QoS limit that would block outbound traffic.' }
+                  $settings.Precedence = [byte]40
+                  $settings.ThrottleRateActionBitsPerSecond = $rate
+                }
+                New-NetQosPolicy @settings | Out-Null
+                $applied++
+              }
+              Write-Output ('OK removed=' + $removed + ' applied=' + $applied)
+            }
+            default { throw 'Unknown RedFilter QoS request.' }
+          }
+        } catch {
+          # Plain text on stderr; -EncodedCommand would otherwise serialize the error as CLIXML.
+          [Console]::Error.WriteLine($_.Exception.Message)
+          exit 1
+        }
+        """;
+
+    public static string EncodedScript { get; } = Convert.ToBase64String(Encoding.Unicode.GetBytes(Script));
+
+    public static string QueryPayload() => JsonSerializer.Serialize(new { op = "query" }, PayloadOptions);
+
+    public static string ClearPayload() => JsonSerializer.Serialize(new { op = "clear" }, PayloadOptions);
+
+    public static string ApplyPayload(IReadOnlyList<string> remove, IReadOnlyList<QosPolicySpec> add)
+    {
+        var removeNames = remove.Select(RequireName).ToArray();
+        var policies = add.Select(policy =>
         {
             var name = RequireName(policy.Name);
-            var path = EscapeLiteral(policy.AppPath);
-            if (policy.IsOwner)
+            var path = RequirePath(policy.AppPath);
+            if (policy.Dscp is < 0 or > 63)
+                throw new InvalidOperationException("A DSCP value must be between 0 and 63.");
+            long? rate = null;
+            if (!policy.IsOwner)
             {
-                builder.AppendLine(
-                    $"New-NetQosPolicy -Name '{name}' -AppPathNameMatchCondition '{path}' -DSCPAction {policy.Dscp} -Precedence 10 -NetworkProfile All -PolicyStore ActiveStore -Confirm:$false | Out-Null");
-            }
-            else
-            {
-                var rate = policy.ThrottleBitsPerSecond ?? throw new InvalidOperationException("A limit policy needs a throttle rate.");
+                rate = policy.ThrottleBitsPerSecond ?? throw new InvalidOperationException("A limit policy needs a throttle rate.");
                 if (rate < QosPolicyPlanner.MinimumThrottleBits)
                     throw new InvalidOperationException("Refusing to build a QoS policy that would block outbound traffic completely.");
-                builder.AppendLine(
-                    $"New-NetQosPolicy -Name '{name}' -AppPathNameMatchCondition '{path}' -ThrottleRateActionBitsPerSecond {rate} -DSCPAction {policy.Dscp} -Precedence 40 -NetworkProfile All -PolicyStore ActiveStore -Confirm:$false | Out-Null");
             }
 
-            builder.AppendLine("$applied++");
-        }
-
-        builder.AppendLine("Write-Output ('OK removed=' + $removed + ' applied=' + $applied)");
-        return builder.ToString();
+            return new { name, path, owner = policy.IsOwner, dscp = policy.Dscp, rate };
+        }).ToArray();
+        return JsonSerializer.Serialize(new { op = "apply", remove = removeNames, add = policies }, PayloadOptions);
     }
 
     public static string RequireName(string name)
     {
         if (!SafeName.IsMatch(name))
-            throw new InvalidOperationException("Refusing to build a QoS script for an unexpected policy name.");
+            throw new InvalidOperationException("Refusing to build a QoS request for an unexpected policy name.");
         return name;
     }
 
-    public static string EscapeLiteral(string value)
+    public static string RequirePath(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new InvalidOperationException("A QoS policy needs a program path.");
-        foreach (var ch in value)
-        {
-            if (ch < ' ' || ch == '`')
-                throw new InvalidOperationException("The program path contains characters that cannot be placed in a QoS policy.");
-        }
-
-        return value.Replace("'", "''", StringComparison.Ordinal);
+        if (value.Length > 32_767 || value.Any(char.IsControl))
+            throw new InvalidOperationException("The program path contains characters that cannot be placed in a QoS policy.");
+        return value;
     }
 }
 
@@ -359,7 +434,7 @@ public static class NetQosPolicyParser
     {
         var wide = ReadInt64(item, name);
         if (wide is null || wide > int.MaxValue || wide < int.MinValue)
-            return wide is null ? null : (int)wide.Value;
+            return null;
         return (int)wide.Value;
     }
 

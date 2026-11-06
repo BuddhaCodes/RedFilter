@@ -1,69 +1,57 @@
 # RedFilter
 
-RedFilter is a Windows desktop app, built with Avalonia, for your own PC and your own home router.
+App de escritorio para Windows (Avalonia, .NET 10) con dos funciones en una sola ventana:
 
-It can give one program priority on the laptop by using Windows QoS policies, and it can sign in to a router you configure and list the clients that router reports. It does not scan the network, guess passwords, or send Wi-Fi frames from the PC.
+- **Este PC:** dar prioridad a un programa de este ordenador y limitar la subida de los demás.
+- **Mi Wi-Fi:** ver qué dispositivos están usando más la red de tu router y bloquearlos.
 
-## What you need
+Solo habla con este PC y con tu router. No escanea la red, no adivina contraseñas y no envía tramas Wi-Fi.
 
-- Windows 10 or Windows 11, 64-bit
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+## Compilar y ejecutar
 
-## Build and run
-
-From this folder:
+Necesitas Windows 10/11 de 64 bits y el [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```bat
 dotnet run --project src\RedFilter.App
 ```
 
-That builds the Debug app and opens the window. The executable is `src\RedFilter.App\bin\Debug\net10.0-windows\RedFilter.exe`.
-
-A Release build is:
-
-```bat
-dotnet build -c Release
-src\RedFilter.App\bin\Release\net10.0-windows\RedFilter.exe
-```
-
-`dotnet run` opens the window as the current user. No administrator prompt is required to open the Network page or the Router page. The Network page says that QoS stays blocked until you elevate.
-
-**Give the network to the selected program** and **Turn filter off** ask Windows for administrator approval. Accept the User Account Control prompt. RedFilter restarts elevated and applies or clears the QoS policies. If you cancel the prompt, the window stays open and QoS stays blocked.
-
-The app window has two pages: **Network** and **Router**.
-
-## Network page
-
-The list shows each running process with its name, PID, program path, TCP connection count, UDP endpoint count, and the current TCP download and upload rate when Windows connection statistics provide them.
-
-Choose a process and **Give the network to the selected program**. RedFilter then:
-
-- Marks that program path with DSCP 46 (expedited forwarding) through `New-NetQosPolicy`
-- Limits outbound traffic from other ordinary programs to the rate you pick (256 Kbps, 1 Mbps, or 5 Mbps)
-- Leaves Windows system processes unthrottled so the PC keeps working
-
-**Turn filter off** removes every QoS policy whose name starts with `RedFilter-` and restores normal sharing. That button is available before elevation so an existing filter can be cleared.
-
-The page shows which program owns the network in the banner at the top, and marks that program's row with **Yes** in the **Owns the network** column. Windows matches the program path, so every process running that same program is included. The limit applies to outbound traffic. It does not cap downloads. Policies are stored in the active QoS store: they remain after you close RedFilter, and Windows drops them on reboot.
-
-## Router page
-
-Enter the address of your own router, the admin username, and the password. The password is encrypted with Windows DPAPI for the current user and stored under `%LOCALAPPDATA%\RedFilter`. It is not written into `settings.json`. RedFilter sends it only to the host you entered.
-
-Before a router answers, the page is still usable: you can edit the address, username, brand, and model, fill the address from this PC's default gateway, and save. The client list stays empty. The status line says exactly which of the address, username, or password is still missing. RedFilter does not guess a password and does not probe other hosts.
-
-**Test connection** identifies the admin API and, when it recognizes one, signs in:
-
-| Router | What works |
-| --- | --- |
-| OpenWrt (ubus) | Lists Wi-Fi clients (MAC, name when `luci-rpc` knows it, byte counters). Disconnect, block for 30 minutes, and unblock each send one `hostapd` admin request for that client. |
-| ASUSWRT | Lists online clients from `appGet.cgi`. Disconnect and block are not sent, because the stock API has no confirmed single-client Wi-Fi disconnect and restarting wireless would drop every device. |
-| FRITZ!Box (TR-064) | Lists hosts, sets realtime priority, and sends Wake-on-LAN. Link speed is the router's Mbit/s figure, not a live byte counter. TR-064 has no documented per-client Wi-Fi disconnect, so that action is not sent. |
-
-If the model is unknown, login fails, or a call is missing, the status line reports that and the form stays editable. A block or disconnect is one admin request per click for one unicast MAC. RedFilter does not inject packets and does not repeat the request.
-
-## Tests
+Tests:
 
 ```bat
 dotnet test -c Release
 ```
+
+## Mi Wi-Fi
+
+Compatible con el **TP-Link TD-W8961N v5** (firmware Realtek, panel en `http://192.168.1.1`).
+
+La primera vez solo pide la contraseña del router; la dirección sale de la puerta de enlace de Windows y el usuario es `admin`. Si marcas "Recordarla", se guarda cifrada con DPAPI para tu usuario de Windows en `%LOCALAPPDATA%\RedFilter` y la app se conecta sola al abrirse. El inicio de sesión envía lo mismo que la página del router: `md5(usuario)` y `md5(contraseña)` a `login.cgi`. Si la sesión caduca, la app vuelve a entrar sola una vez.
+
+**Quién usa más.** El router no da bytes por dispositivo; da paquetes enviados y recibidos por cada cliente Wi-Fi (*Active Wireless Client Table*). La app lee esa tabla cada 5 segundos y ordena por paquetes por segundo, así que lo de arriba es lo que más está usando la red *ahora*. Los nombres e IP salen de la tabla DHCP. Lo que se conecta a través de un repetidor (por ejemplo un RE1500X) el router lo ve como un solo dispositivo: el repetidor.
+
+**Bloquear.** Usa la *Access Control List* del Wi-Fi del router en modo "Deny Listed": añade la MAC, enciende el bloqueo y vuelve a leer la página para confirmar. "Desbloquear" la quita de la lista; si la lista queda vacía, el bloqueo se apaga. Salvaguardas:
+
+- No deja bloquear este PC, y si este PC está en la lista lo saca antes de encender el bloqueo.
+- Avisa antes de bloquear un repetidor, porque deja sin Wi-Fi a todo lo que cuelga de él.
+- Si la lista ya tenía otras MAC guardadas con el bloqueo apagado, te las enseña y eliges: bloquearlas también o quitarlas y bloquear solo al dispositivo elegido.
+- No toca el modo "Allow Listed", que dejaría fuera a todos los demás.
+
+**Con VPN.** Si una VPN como WireGuard manda todo por el túnel, el PC no llega a `192.168.1.1`. En WireGuard, quita *Block untunneled traffic (kill-switch)* o excluye `192.168.1.0/24` de *AllowedIPs*.
+
+## Este PC
+
+La lista muestra los programas que usan la red, uno por programa y el que más usa arriba. **Priorizar** usa directivas QoS de Windows:
+
+- Marca el tráfico de ese programa con DSCP 46.
+- Limita la **subida** de los demás programas normales a 256 Kbps, 1 Mbps o 5 Mbps. Las descargas no se limitan.
+- No limita los procesos de Windows (svchost y similares). Windows Update y la Optimización de distribución van dentro de svchost; para frenarlas usa *Configuración > Windows Update > Opciones avanzadas > Optimización de distribución*.
+
+Solo se limitan los programas que usan la red, y siguen limitados hasta que pulses **Quitar prioridad**. Las directivas siguen activas aunque cierres la app y Windows las borra al reiniciar. Cambiar la prioridad pide permiso de administrador y reinicia RedFilter elevado.
+
+**Con VPN.** Todo sale cifrado por el túnel: la marca DSCP no llega al router y el límite puede no aplicarse al adaptador de la VPN. La app lo avisa.
+
+El PowerShell elevado ejecuta siempre el mismo script fijo (`-EncodedCommand`). Las rutas, nombres y límites entran como JSON solo ASCII por la entrada estándar y nunca se interpretan como código; nada se escribe en `%TEMP%`.
+
+## Otros routers
+
+El núcleo (`RedFilter.Core`) también tiene clientes para OpenWrt (ubus), ASUSWRT y FRITZ!Box (TR-064), con pruebas, aunque la ventana actual solo usa el del TD-W8961N.
