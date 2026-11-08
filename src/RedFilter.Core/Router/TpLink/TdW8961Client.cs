@@ -152,7 +152,7 @@ public sealed class TdW8961Client
     /// <summary>
     /// Caps one device's speed. Traffic shaping rules match an IP, so the device's current IP is first
     /// fixed in the router's DHCP (otherwise the limit would stop working when the IP changes). If the
-    /// line bandwidth is still "unlimited", it is set to 90% of the DSL sync speed so the router knows
+    /// line bandwidth is still "unlimited", it is set a little below the DSL sync speed (85% down, 80% up) so the router knows
     /// how much there is to share. Any older limit for the same IP is replaced. Every step is read back.
     /// </summary>
     public async Task<ShapingRule> LimitAsync(string mac, string ip, int upKbps, int downKbps, CancellationToken cancellationToken)
@@ -169,7 +169,8 @@ public sealed class TdW8961Client
             var line = await ReadLineSpeedAsync(cancellationToken);
             if (line != null)
             {
-                await PostAsync(TdW8961LimitPages.ShapingForm, TdW8961LimitPages.SetTotalsBody(line.UpKbps * 9 / 10, line.DownKbps * 9 / 10), cancellationToken);
+                var (totalUp, totalDown) = GameModePlanner.ShapingTotals(line);
+                await PostAsync(TdW8961LimitPages.ShapingForm, TdW8961LimitPages.SetTotalsBody(totalUp, totalDown), cancellationToken);
                 shaping = await ReadShapingAsync(cancellationToken);
             }
         }
@@ -206,7 +207,7 @@ public sealed class TdW8961Client
 
     /// <summary>
     /// Makes sure the router knows the line speed for sharing. Returns the totals in use; when they
-    /// were "unlimited", sets them to 90% of the DSL sync speed.
+    /// were "unlimited", sets them a little below the DSL sync speed (85% down, 80% up).
     /// </summary>
     public async Task<ShapingState> EnsureLineTotalsAsync(CancellationToken cancellationToken)
     {
@@ -215,7 +216,8 @@ public sealed class TdW8961Client
             return shaping;
         var line = await ReadLineSpeedAsync(cancellationToken)
             ?? throw new RouterException("The router does not show the DSL line speed right now, so RedFilter cannot share it. Is the line connected?");
-        await PostAsync(TdW8961LimitPages.ShapingForm, TdW8961LimitPages.SetTotalsBody(line.UpKbps * 9 / 10, line.DownKbps * 9 / 10), cancellationToken);
+        var (up, down) = GameModePlanner.ShapingTotals(line);
+        await PostAsync(TdW8961LimitPages.ShapingForm, TdW8961LimitPages.SetTotalsBody(up, down), cancellationToken);
         shaping = await ReadShapingAsync(cancellationToken);
         if (shaping.TotalUpKbps <= 0 || shaping.TotalDownKbps <= 0)
             throw new RouterException("The router did not confirm the line speed. Open its IP QoS > Traffic Shaping page to check it.");

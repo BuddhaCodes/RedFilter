@@ -21,6 +21,9 @@ public sealed class AppSettings
 
     /// <summary>Offer the Dota 2 mode when dota2.exe starts, and end it when the game closes.</summary>
     public bool GameModeAuto { get; set; } = true;
+
+    /// <summary>How hard the Dota 2 mode squeezes everyone else.</summary>
+    public RedFilter.Core.Router.TpLink.GameModeLevel GameModeLevel { get; set; } = RedFilter.Core.Router.TpLink.GameModeLevel.Aggressive;
 }
 
 public interface ISecretProtector
@@ -80,7 +83,8 @@ public sealed class SettingsStore
             RouterCertificateHost = settings.RouterCertificateHost,
             RouterCertificateSha256 = settings.RouterCertificateSha256,
             GameMode = settings.GameMode,
-            GameModeAuto = settings.GameModeAuto
+            GameModeAuto = settings.GameModeAuto,
+            GameModeLevel = settings.GameModeLevel
         };
         WriteAtomically(SettingsPath, System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(copy, JsonOptions)));
     }

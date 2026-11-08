@@ -18,8 +18,9 @@ namespace RedFilter.ViewModels;
 public sealed class WifiViewModel : ObservableObject, IDisposable
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
-    // Download caps offered by "Limitar" (kbps). Upload gets a quarter, like an ADSL line.
-    private static readonly int[] DownloadChoices = { 256, 512, 1024, 2048 };
+    // Download caps offered by "Limitar" (kbps). On a ~4 Mbps line, 1 Mbps is already a quarter of it.
+    // Upload gets a quarter of the download, like an ADSL line.
+    private static readonly int[] DownloadChoices = { 64, 128, 256, 512, 1024 };
     private static readonly Regex RepeaterName = new(@"^(RE\d{3,4}|.*(repeater|extender|repetidor|mesh|deco).*)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private readonly SettingsStore _store;
@@ -294,8 +295,9 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
     /// Router half of the Dota 2 mode. Saves how to undo it before changing anything, then gives this
     /// PC a guaranteed share and caps every other device. Returns a line for the status.
     /// </summary>
-    public async Task<string> StartGameModeAsync()
+    public async Task<string> StartGameModeAsync(GameModeProfile? profile = null)
     {
+        profile ??= GameModeProfile.For(_store.Load().GameModeLevel);
         if (_session == null || !Connected)
             throw new RouterException("Conecta primero con el router (pestaña Mi Wi-Fi).");
         await RefreshAsync();
@@ -324,9 +326,13 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
 
                 var backup = settings.GameMode;
                 var shaping = await client.EnsureLineTotalsAsync(_cancel.Token);
+                // Shape a little below what the line really carries, even if the totals were set higher before.
+                var (totalUp, totalDown) = await client.ReadLineSpeedAsync(_cancel.Token) is { } line
+                    ? GameModePlanner.ShapingTotals(line)
+                    : (shaping.TotalUpKbps, shaping.TotalDownKbps);
                 var snapshot = await client.ReadAsync(_cancel.Token);
-                var plan = GameModePlanner.Build(shaping.TotalUpKbps, shaping.TotalDownKbps, pcIp,
-                    snapshot.Leases.Select(lease => lease.Ip), backup.Limits);
+                var plan = GameModePlanner.Build(totalUp, totalDown, pcIp,
+                    snapshot.Leases.Select(lease => lease.Ip), backup.Limits, profile);
                 foreach (var ip in plan.AllRules.Select(rule => rule.Ip).Where(ip => !backup.TouchedIps.Contains(ip)))
                     backup.TouchedIps.Add(ip);
                 _store.Save(settings);
@@ -336,7 +342,7 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
 
             _lastRebalanceUtc = DateTime.UtcNow;
             await RefreshAsync();
-            return $"Router: este PC tiene reservados {GameModePlanner.Describe(plan.Pc.DownFloorKbps ?? 0)} de bajada y {GameModePlanner.Describe(plan.Pc.UpFloorKbps ?? 0)} de subida; " +
+            return $"Router ({profile.Name}): este PC tiene reservados {GameModePlanner.Describe(plan.Pc.DownFloorKbps ?? 0)} de bajada y {GameModePlanner.Describe(plan.Pc.UpFloorKbps ?? 0)} de subida; " +
                    $"los otros {plan.Others.Count} dispositivos comparten como mucho {GameModePlanner.Describe(plan.OthersDownKbps)} / {GameModePlanner.Describe(plan.OthersUpKbps)}.";
         }
         finally
@@ -417,7 +423,7 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
         var choice = await _prompt.ChooseAsync(
             intro +
             $"¿A cuánto limitar a {row.Name} ({row.Ip})?\n\n" +
-            "El router fijará su IP en el DHCP para que el límite no se pierda si la cambia. Si es el primer límite, también le dirá al router la velocidad real de tu línea (el 90% de la sincronización ADSL).",
+            "El router fijará su IP en el DHCP para que el límite no se pierda si la cambia. Si es el primer límite, también le dirá al router la velocidad real de tu línea (85% de bajada y 80% de subida de la sincronización ADSL).",
             new[] { "Cancelar" }.Concat(labels).ToList());
         if (choice < 1)
             return;
@@ -469,7 +475,7 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static int UploadFor(int downKbps) => Math.Max(64, downKbps / 4);
+    private static int UploadFor(int downKbps) => Math.Max(16, downKbps / 4);
 
     private static string Speed(int kbps) => RateText.BitsPerSecond(kbps * 1000L);
 

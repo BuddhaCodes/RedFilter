@@ -51,10 +51,10 @@ La primera vez solo pide la contraseña del router; la dirección sale de la pue
 - Si la lista ya tenía otras MAC guardadas con el bloqueo apagado, te las enseña y eliges: bloquearlas también o quitarlas y bloquear solo al dispositivo elegido.
 - No toca el modo "Allow Listed", que dejaría fuera a todos los demás.
 
-**Limitar.** Pone un tope de velocidad a un dispositivo sin echarlo: 256 kbps, 512 kbps, 1 Mbps o 2 Mbps de bajada, y un cuarto de eso de subida. Usa *Advanced > IP QoS > Traffic Shaping* (`ipqostc.htm`), que limita por IP:
+**Limitar.** Pone un tope de velocidad a un dispositivo sin echarlo: 64, 128, 256 o 512 kbps, o 1 Mbps de bajada, y un cuarto de eso de subida. Usa *Advanced > IP QoS > Traffic Shaping* (`ipqostc.htm`), que limita por IP:
 
 - Primero fija la IP actual del dispositivo en *DHCP Static IP* (`dhcpip.htm`), para que el límite no se pierda si el router le da otra. Si el dispositivo ya tenía una IP fija distinta, pide reconectarlo antes.
-- Si la línea está en "sin límite" (0), le pone el 90% de la velocidad de sincronización ADSL que muestra la página de estado, para que el router sepa cuánto hay que repartir.
+- Si la línea está en "sin límite" (0), le pone el 85% de bajada y el 80% de subida de la velocidad de sincronización ADSL que muestra la página de estado, para que el router sepa cuánto hay que repartir.
 - Crea una regla que solo mira la IP de origen. Si ya había una para esa IP, la sustituye. Después vuelve a leer la página para confirmar.
 - "Quitar límite" borra la regla. Si no queda ninguna, la línea vuelve a "sin límite". La IP fija se queda, porque no molesta.
 - No toca las reglas que tú hayas creado con más condiciones (protocolo, puertos, IP de destino o rangos).
@@ -69,8 +69,17 @@ El bloqueo es por MAC y solo para el Wi-Fi: no afecta a lo conectado por cable, 
 
 El panel de arriba tiene un botón **Activar** que prepara la red para jugar:
 
-- **En el router:** este PC tiene garantizado lo que los demás no pueden usar (con tu línea, unos 1,6 Mbps de bajada y 650 kbps de subida) y puede usar la línea entera cuando está libre. Cada uno de los demás dispositivos de la tabla DHCP recibe su propia regla, y entre todos no pasan de **2,5 Mbps de bajada y 384 kbps de subida**. A ningún dispositivo se le deja con menos de 128/32 kbps. Si ya tenías a alguien limitado más bajo, se respeta tu límite. Los dispositivos que se conectan durante la partida reciben su regla en menos de un minuto.
-- **En este PC:** Dota 2 (`dota2.exe`) tiene prioridad y la subida de los demás programas se limita a 256 kbps. Si RedFilter no está abierto como administrador, Windows pide permiso y la app se reinicia.
+- **Nivel:** elige cuánto se aprieta a los demás. Se puede cambiar con el modo encendido.
+
+  | Nivel | Todos los demás juntos (bajada / subida) | Otros programas de este PC (subida) | Para qué alcanza |
+  |---|---|---|---|
+  | Suave | hasta 2,5 Mbps / 384 kbps (65% / 40% de la línea) | 256 kbps | vídeo en calidad media |
+  | **Agresivo** (por defecto) | hasta 1 Mbps / 160 kbps (25% / 15%) | 128 kbps | chat, web, vídeo en baja calidad |
+  | Extremo | hasta 384 kbps / 64 kbps (10% / 6%) | 64 kbps | solo mensajes y notificaciones |
+
+  Cada nivel usa la menor de las dos cifras (la fija o el porcentaje), así que en una línea lenta también aprieta.
+- **En el router:** la línea se reparte un poco por debajo de lo que sincroniza el ADSL (85% de bajada y 80% de subida). En ADSL llega menos de lo que dice la sincronización, y si el router reparte por encima de eso, la cola del módem se llena y el ping sube igual. Este PC tiene garantizado lo que los demás no usan, nunca menos de la mitad de la línea, y puede usarla entera cuando está libre. Cada uno de los demás dispositivos de la tabla DHCP recibe su propia regla con su parte del presupuesto, con un mínimo por dispositivo (64/16 kbps en Agresivo). Si ya tenías a alguien limitado más bajo, se respeta tu límite. Los dispositivos que se conectan durante la partida reciben su regla en menos de un minuto.
+- **En este PC:** Dota 2 (`dota2.exe`) tiene prioridad y la subida de los demás programas se limita según el nivel. Si RedFilter no está abierto como administrador, Windows pide permiso y la app se reinicia.
 - **Automático:** si la casilla está marcada, la app ofrece el modo cuando detecta Dota 2 y lo apaga solo 20 segundos después de que lo cierres.
 - **Deshacer:** antes de tocar el router, la app guarda en `settings.json` los totales y los límites que había. Al apagar el modo los vuelve a poner, aunque la app se haya cerrado entre medias.
 

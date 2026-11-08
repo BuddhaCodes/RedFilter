@@ -25,8 +25,21 @@
           </Border>
         </StackPanel>
         <TextBlock Text="{Binding Detail}" Classes="note" MaxWidth="820" HorizontalAlignment="Left"/>
-        <CheckBox IsChecked="{Binding Auto}" Margin="0,4,0,0"
-                  Content="Ofrecerlo al abrir Dota 2 y apagarlo solo al cerrarlo"/>
+        <WrapPanel Margin="0,6,0,0">
+          <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,24,4">
+            <TextBlock Text="Nivel" Classes="field" VerticalAlignment="Center"/>
+            <ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding Level}" MinWidth="140" IsEnabled="{Binding CanToggle}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:LevelChoice">
+                  <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Text="{Binding LevelDescription}" Classes="small" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
+          </StackPanel>
+          <CheckBox IsChecked="{Binding Auto}" Margin="0,0,0,4"
+                    Content="Ofrecerlo al abrir Dota 2 y apagarlo solo al cerrarlo"/>
+        </WrapPanel>
       </StackPanel>
 
       <Button Grid.Column="4" Classes="hero accent" VerticalAlignment="Center"

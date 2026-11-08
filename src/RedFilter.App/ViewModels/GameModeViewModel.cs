@@ -1,6 +1,8 @@
 using Avalonia.Threading;
 using RedFilter.Core.Processes;
 using RedFilter.Core.Router;
+using RedFilter.Core.Router.TpLink;
+using RedFilter.Core.Text;
 using RedFilter.Core.Settings;
 
 namespace RedFilter.ViewModels;
@@ -31,6 +33,34 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
     private string? _gamePath;
     private bool _sawGameWhileActive;
     private DateTime? _goneSinceUtc;
+    private LevelChoice _level;
+
+    public IReadOnlyList<LevelChoice> Levels { get; } = new[]
+    {
+        new LevelChoice { Profile = GameModeProfile.Soft },
+        new LevelChoice { Profile = GameModeProfile.Aggressive },
+        new LevelChoice { Profile = GameModeProfile.Extreme }
+    };
+
+    /// <summary>How hard the mode squeezes everyone else. Changing it while the mode is on re-applies it.</summary>
+    public LevelChoice Level
+    {
+        get => _level;
+        set
+        {
+            if (value == null || !Set(ref _level, value))
+                return;
+            Raise(nameof(LevelDescription));
+            var settings = _store.Load();
+            settings.GameModeLevel = value.Profile.Level;
+            _store.Save(settings);
+            if (Active)
+                _ = ReapplyAsync();
+        }
+    }
+
+    public string LevelDescription => Level.Description;
+    private GameModeProfile Profile => Level.Profile;
 
     public GameModeViewModel(NetworkViewModel network, WifiViewModel wifi, SettingsStore store, IUserPrompt prompt)
     {
@@ -40,6 +70,7 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
         _prompt = prompt;
         var settings = store.Load();
         _auto = settings.GameModeAuto;
+        _level = Levels.First(choice => choice.Profile.Level == GameModeProfile.For(settings.GameModeLevel).Level);
         _active = settings.GameMode != null;
         _detail = _active
             ? "El modo Dota 2 sigue activo desde la última vez. Apágalo cuando termines para devolver la red a los demás."
@@ -97,8 +128,9 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
         if (askFirst && !await _prompt.ConfirmAsync(
                 "¿Activar el modo Dota 2?\n\n" +
                 "•  Este PC tendrá reservada la mayor parte de la línea.\n" +
-                "•  Los demás dispositivos de la casa compartirán como mucho unos 2,5 Mbps de bajada y 384 kbps de subida (el móvil sigue funcionando, pero los vídeos irán en baja calidad).\n" +
-                "•  En este PC, Dota 2 tendrá prioridad y la subida de los otros programas se limita a 256 kbps.\n\n" +
+                $"•  Nivel {Profile.Name}: los demás dispositivos de la casa compartirán como mucho {GameModePlanner.Describe(Profile.OthersDownBudgetKbps)} de bajada y {GameModePlanner.Describe(Profile.OthersUpBudgetKbps)} de subida.\n" +
+                $"   {Level.Description}\n" +
+                $"•  En este PC, Dota 2 tendrá prioridad y la subida de los otros programas se limita a {RateText.BitsPerSecond(Profile.PcOtherProgramsUploadBits)}.\n\n" +
                 "Al aplicar los cambios, el router puede tardar unos segundos. Todo vuelve a como estaba al apagar el modo o al cerrar Dota 2." +
                 (_network.IsAdmin || game == null ? "" : "\n\nPara la prioridad en este PC, Windows pedirá permiso de administrador y RedFilter se reiniciará.")))
             return;
@@ -107,7 +139,7 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
         try
         {
             Detail = "Configurando el router…";
-            var routerText = await _wifi.StartGameModeAsync();
+            var routerText = await _wifi.StartGameModeAsync(Profile);
             Active = true;
             _sawGameWhileActive = game != null;
             _goneSinceUtc = null;
@@ -130,8 +162,31 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
     {
         _prioritizedPid = game.Pid;
         _gamePath = game.ExecutablePath;
-        if (await _network.PrioritizeGameAsync(game))
-            Detail = routerText + " Este PC: Dota 2 tiene prioridad y los demás programas suben a 256 kbps como mucho.";
+        if (await _network.PrioritizeGameAsync(game, Profile.PcOtherProgramsUploadBits))
+            Detail = routerText + $" Este PC: Dota 2 tiene prioridad y los demás programas suben a {RateText.BitsPerSecond(Profile.PcOtherProgramsUploadBits)} como mucho.";
+    }
+
+    private async Task ReapplyAsync()
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            Detail = $"Cambiando a nivel {Profile.Name}…";
+            var routerText = await _wifi.StartGameModeAsync(Profile);
+            Detail = routerText;
+            if (_network.FindDota() is { } game && _network.IsAdmin)
+                await PrioritizeAsync(game, routerText);
+        }
+        catch (RouterException ex)
+        {
+            Detail = "No se pudo cambiar el nivel: " + ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
     }
 
     private async Task StopAsync(bool automatic)
@@ -202,4 +257,17 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
 
         await _wifi.RebalanceGameModeAsync();
     }
+}
+
+/// <summary>One entry of the level picker.</summary>
+public sealed class LevelChoice
+{
+    public required GameModeProfile Profile { get; init; }
+    public string Label => Profile.Name;
+    public string Description => Profile.Level switch
+    {
+        GameModeLevel.Soft => "Los demás: hasta ~2,5 Mbps / 384 kbps entre todos. Vídeo en calidad media.",
+        GameModeLevel.Extreme => "Los demás: ~384 kbps / 64 kbps entre todos. Solo mensajes y notificaciones.",
+        _ => "Los demás: ~1 Mbps / 160 kbps entre todos. Chat, web y vídeo en baja calidad."
+    };
 }

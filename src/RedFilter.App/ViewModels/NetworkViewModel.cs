@@ -101,9 +101,6 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     private bool _vpnActive;
     private string _vpnName = "";
 
-    /// <summary>Upload cap for the other programs on this PC while Dota 2 has priority.</summary>
-    public const long GameThrottleBitsPerSecond = 256_000;
-
     public bool IsAdmin => _isAdmin;
 
     /// <summary>The running Dota 2 process, from the last process sample.</summary>
@@ -116,7 +113,7 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     /// Gives the game priority on this PC without asking again (the game mode already asked). Without
     /// administrator rights Windows asks for them and RedFilter restarts; returns false in that case.
     /// </summary>
-    public async Task<bool> PrioritizeGameAsync(ProcessNetworkRow game)
+    public async Task<bool> PrioritizeGameAsync(ProcessNetworkRow game, long otherProgramsUploadBits)
     {
         if (string.IsNullOrWhiteSpace(game.ExecutablePath))
         {
@@ -124,9 +121,9 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
             return false;
         }
 
-        if (HasPriority(game.ExecutablePath))
+        var rate = QosPolicyPlanner.NormalizeThrottle(otherProgramsUploadBits);
+        if (HasPriority(game.ExecutablePath) && Interlocked.Read(ref _throttleBits) == rate)
             return true;
-        var rate = QosPolicyPlanner.NormalizeThrottle(GameThrottleBitsPerSecond);
         if (!_isAdmin)
         {
             RequestElevation(new QosLaunchRequest(false, game.Pid, game.ExecutablePath, game.Name, rate));

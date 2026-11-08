@@ -211,7 +211,7 @@ public sealed class TdW8961LimitTests
         Assert.Equal(256, rule.UpCeilingKbps);
         Assert.Equal(1024, rule.DownCeilingKbps);
         Assert.Contains(("192.168.1.111", "F4:1A:9C:39:3A:00"), router.Static);
-        Assert.Equal((1033, 4146), router.Totals); // 90% of the 1148/4607 kbps sync speed
+        Assert.Equal((918, 3915), router.Totals); // 80% up / 85% down of the 1148/4607 kbps sync speed
         Assert.Equal(3, router.Posts.Count);
         Assert.Contains("form2Dhcpip.cgi", router.Posts[0], StringComparison.Ordinal);
         Assert.Contains("applyItflimit", router.Posts[1], StringComparison.Ordinal);
@@ -248,8 +248,8 @@ public sealed class TdW8961LimitTests
 
         var rule = await client.LimitAsync("F4:1A:9C:39:3A:00", "192.168.1.111", 99_999, 99_999, CancellationToken.None);
 
-        Assert.Equal(1033, rule.UpCeilingKbps);
-        Assert.Equal(4146, rule.DownCeilingKbps);
+        Assert.Equal(918, rule.UpCeilingKbps);
+        Assert.Equal(3915, rule.DownCeilingKbps);
     }
 
     [Fact]
@@ -262,7 +262,7 @@ public sealed class TdW8961LimitTests
 
         var first = await client.RemoveLimitAsync("192.168.1.111", CancellationToken.None);
         Assert.Single(first.Rules);
-        Assert.Equal((1033, 4146), router.Totals);
+        Assert.Equal((918, 3915), router.Totals);
 
         var last = await client.RemoveLimitAsync("192.168.1.105", CancellationToken.None);
         Assert.Empty(last.Rules);
@@ -321,26 +321,49 @@ public sealed class TdW8961LimitTests
     public void GameModeSharesTheBudgetAndGuaranteesThePcTheRest()
     {
         var plan = GameModePlanner.Build(1033, 4146, "192.168.1.109",
-            new[] { "192.168.1.111", "192.168.1.105", "192.168.1.109", "192.168.1.101", "192.168.1.104" }, Array.Empty<ShapingRule>());
+            new[] { "192.168.1.111", "192.168.1.105", "192.168.1.109", "192.168.1.101", "192.168.1.104" }, Array.Empty<ShapingRule>(), GameModeProfile.Soft);
 
         Assert.Equal(4, plan.Others.Count); // the PC is never among the others
         Assert.All(plan.Others, rule => Assert.Equal(625, rule.DownCeilingKbps)); // 2500 / 4
         Assert.All(plan.Others, rule => Assert.Equal(96, rule.UpCeilingKbps));    // 384 / 4
-        Assert.True(plan.Others.Sum(rule => rule.DownCeilingKbps) <= GameModePlanner.OthersDownBudgetKbps);
-        Assert.Equal(new GameModeRule("192.168.1.109", 1033 - 384, 1033, 4146 - 2500, 4146), plan.Pc);
+        Assert.Equal(2500, plan.OthersDownKbps);
+        // The PC keeps what the others cannot take, and never less than half the line.
+        Assert.Equal(new GameModeRule("192.168.1.109", 1033 - 384, 1033, 4146 / 2, 4146), plan.Pc);
         Assert.Equal("192.168.1.101", plan.Others[0].Ip);
+    }
+
+    [Fact]
+    public void AggressiveAndExtremeSqueezeAFourMegabitLineHard()
+    {
+        var (up, down) = GameModePlanner.ShapingTotals(new LineSpeed(1148, 4607));
+        Assert.Equal((918, 3915), (up, down)); // 80% up, 85% down of the sync speed
+
+        var others = new[] { "192.168.1.101", "192.168.1.103", "192.168.1.104", "192.168.1.105", "192.168.1.106", "192.168.1.107" };
+        var aggressive = GameModePlanner.Build(up, down, "192.168.1.109", others, Array.Empty<SavedLimit>());
+        Assert.Equal(GameModeProfile.Aggressive, GameModeProfile.For(GameModeLevel.Aggressive));
+        // Aggressive: 25% / 15% of the line shared by six devices -> 163 kbps down, 22 kbps up each.
+        Assert.All(aggressive.Others, rule => Assert.Equal((22, 163), (rule.UpCeilingKbps, rule.DownCeilingKbps)));
+        Assert.True(aggressive.OthersDownKbps <= 978 && aggressive.OthersUpKbps <= 137); // 25% / 15% of the line
+        Assert.True(aggressive.Pc.DownFloorKbps >= down * 3 / 4);
+
+        var extreme = GameModePlanner.Build(up, down, "192.168.1.109", others, Array.Empty<SavedLimit>(), GameModeProfile.Extreme);
+        Assert.All(extreme.Others, rule => Assert.Equal((9, 64), (rule.UpCeilingKbps, rule.DownCeilingKbps)));
+        Assert.True(extreme.Pc.UpFloorKbps >= up * 9 / 10);
+        Assert.Equal(64_000, GameModeProfile.Extreme.PcOtherProgramsUploadBits);
     }
 
     [Fact]
     public void GameModeNeverStarvesADeviceAndKeepsALowerUserLimit()
     {
         var many = Enumerable.Range(100, 40).Select(i => $"192.168.1.{i}").ToList();
+        var profile = GameModeProfile.Aggressive;
         var crowded = GameModePlanner.Build(1033, 4146, "192.168.1.109", many, Array.Empty<ShapingRule>());
-        Assert.All(crowded.Others, rule => Assert.True(rule.DownCeilingKbps >= GameModePlanner.MinDeviceDownKbps && rule.UpCeilingKbps >= GameModePlanner.MinDeviceUpKbps));
+        Assert.All(crowded.Others, rule => Assert.True(rule.DownCeilingKbps >= profile.MinDeviceDownKbps && rule.UpCeilingKbps >= profile.MinDeviceUpKbps));
+        Assert.True(crowded.Pc.DownFloorKbps >= 4146 / 2); // the minimums add up past the budget, but the PC keeps half
 
-        var user = new ShapingRule(0, "192.168.1.111", true, null, null, 64, 256);
+        var user = new ShapingRule(0, "192.168.1.111", true, null, null, 16, 64);
         var plan = GameModePlanner.Build(1033, 4146, "192.168.1.109", new[] { "192.168.1.111" }, new[] { user });
-        Assert.Equal((64, 256), (plan.Others[0].UpCeilingKbps, plan.Others[0].DownCeilingKbps));
+        Assert.Equal((16, 64), (plan.Others[0].UpCeilingKbps, plan.Others[0].DownCeilingKbps));
         Assert.Throws<RouterException>(() => GameModePlanner.Build(0, 0, "192.168.1.109", many, Array.Empty<ShapingRule>()));
     }
 
