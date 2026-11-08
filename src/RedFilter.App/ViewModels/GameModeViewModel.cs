@@ -1,0 +1,205 @@
+using Avalonia.Threading;
+using RedFilter.Core.Processes;
+using RedFilter.Core.Router;
+using RedFilter.Core.Settings;
+
+namespace RedFilter.ViewModels;
+
+/// <summary>
+/// "Modo Dota 2": on the router, this PC gets a guaranteed share of the line and every other device is
+/// capped; on this PC, dota2.exe gets priority and other programs' uploads are throttled. It can be
+/// switched on by hand, is offered when Dota 2 starts, and ends by itself when the game closes.
+/// </summary>
+public sealed class GameModeViewModel : ObservableObject, IDisposable
+{
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan GoneGrace = TimeSpan.FromSeconds(20);
+
+    private readonly NetworkViewModel _network;
+    private readonly WifiViewModel _wifi;
+    private readonly SettingsStore _store;
+    private readonly IUserPrompt _prompt;
+    private readonly DispatcherTimer _timer;
+    private bool _active;
+    private bool _busy;
+    private bool _dotaRunning;
+    private bool _auto;
+    private string _detail = "";
+    private string _dotaText = "Dota 2 no está abierto.";
+    private int? _offeredPid;
+    private int? _prioritizedPid;
+    private string? _gamePath;
+    private bool _sawGameWhileActive;
+    private DateTime? _goneSinceUtc;
+
+    public GameModeViewModel(NetworkViewModel network, WifiViewModel wifi, SettingsStore store, IUserPrompt prompt)
+    {
+        _network = network;
+        _wifi = wifi;
+        _store = store;
+        _prompt = prompt;
+        var settings = store.Load();
+        _auto = settings.GameModeAuto;
+        _active = settings.GameMode != null;
+        _detail = _active
+            ? "El modo Dota 2 sigue activo desde la última vez. Apágalo cuando termines para devolver la red a los demás."
+            : IdleDetail;
+        _timer = new DispatcherTimer { Interval = CheckInterval };
+        _timer.Tick += async (_, _) => await CheckAsync();
+        _timer.Start();
+    }
+
+    private const string IdleDetail =
+        "Reserva la línea para este PC, limita a todos los demás dispositivos de la casa y da prioridad a Dota 2 frente a los otros programas.";
+
+    public bool Active { get => _active; private set { if (Set(ref _active, value)) { Raise(nameof(Title)); Raise(nameof(ToggleLabel)); } } }
+    public bool Busy { get => _busy; private set { if (Set(ref _busy, value)) Raise(nameof(CanToggle)); } }
+    public bool DotaRunning { get => _dotaRunning; private set => Set(ref _dotaRunning, value); }
+    public string Detail { get => _detail; private set => Set(ref _detail, value); }
+    public string DotaText { get => _dotaText; private set => Set(ref _dotaText, value); }
+    public string Title => Active ? "MODO DOTA 2 ACTIVO" : "MODO DOTA 2";
+    public string ToggleLabel => Active ? "Apagar" : "Activar";
+    public bool CanToggle => !Busy;
+
+    public bool Auto
+    {
+        get => _auto;
+        set
+        {
+            if (!Set(ref _auto, value))
+                return;
+            var settings = _store.Load();
+            settings.GameModeAuto = value;
+            _store.Save(settings);
+        }
+    }
+
+    public async Task ToggleAsync()
+    {
+        if (Active)
+            await StopAsync(automatic: false);
+        else
+            await StartAsync(_network.FindDota(), askFirst: true);
+    }
+
+    public void Dispose() => _timer.Stop();
+
+    private async Task StartAsync(ProcessNetworkRow? game, bool askFirst)
+    {
+        if (Busy)
+            return;
+        if (!_wifi.Connected)
+        {
+            Detail = "Conecta primero con tu router en la sección Mi Wi-Fi: el modo Dota 2 reparte la línea desde el router.";
+            return;
+        }
+
+        if (askFirst && !await _prompt.ConfirmAsync(
+                "¿Activar el modo Dota 2?\n\n" +
+                "•  Este PC tendrá reservada la mayor parte de la línea.\n" +
+                "•  Los demás dispositivos de la casa compartirán como mucho unos 2,5 Mbps de bajada y 384 kbps de subida (el móvil sigue funcionando, pero los vídeos irán en baja calidad).\n" +
+                "•  En este PC, Dota 2 tendrá prioridad y la subida de los otros programas se limita a 256 kbps.\n\n" +
+                "Al aplicar los cambios, el router puede tardar unos segundos. Todo vuelve a como estaba al apagar el modo o al cerrar Dota 2." +
+                (_network.IsAdmin || game == null ? "" : "\n\nPara la prioridad en este PC, Windows pedirá permiso de administrador y RedFilter se reiniciará.")))
+            return;
+
+        Busy = true;
+        try
+        {
+            Detail = "Configurando el router…";
+            var routerText = await _wifi.StartGameModeAsync();
+            Active = true;
+            _sawGameWhileActive = game != null;
+            _goneSinceUtc = null;
+            Detail = routerText + (game == null ? " Cuando abras Dota 2, se le dará prioridad en este PC." : "");
+            if (game != null)
+                await PrioritizeAsync(game, routerText);
+        }
+        catch (RouterException ex)
+        {
+            Detail = "No se pudo activar el modo: " + ex.Message + (_wifi.GameModeActive ? " Pulsa Apagar para deshacer lo que se llegó a aplicar." : "");
+            Active = _wifi.GameModeActive;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task PrioritizeAsync(ProcessNetworkRow game, string routerText)
+    {
+        _prioritizedPid = game.Pid;
+        _gamePath = game.ExecutablePath;
+        if (await _network.PrioritizeGameAsync(game))
+            Detail = routerText + " Este PC: Dota 2 tiene prioridad y los demás programas suben a 256 kbps como mucho.";
+    }
+
+    private async Task StopAsync(bool automatic)
+    {
+        if (Busy)
+            return;
+        Busy = true;
+        try
+        {
+            Detail = "Devolviendo el router a como estaba…";
+            var routerText = await _wifi.StopGameModeAsync();
+            await _network.EndGamePriorityAsync(_gamePath);
+            Active = false;
+            _prioritizedPid = null;
+            _sawGameWhileActive = false;
+            _goneSinceUtc = null;
+            Detail = (automatic ? "Dota 2 se cerró, así que el modo se apagó solo. " : "Modo Dota 2 apagado. ") + routerText;
+        }
+        catch (RouterException ex)
+        {
+            Detail = "No se pudo apagar del todo: " + ex.Message + " Vuelve a pulsar Apagar cuando el router responda.";
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task CheckAsync()
+    {
+        var game = _network.FindDota();
+        DotaRunning = game != null;
+        DotaText = game == null
+            ? "Dota 2 no está abierto."
+            : _network.HasPriority(game.ExecutablePath) ? "Dota 2 abierto · con prioridad en este PC" : "Dota 2 abierto";
+        if (Busy)
+            return;
+
+        if (!Active)
+        {
+            if (game != null && Auto && _offeredPid != game.Pid && _wifi.Connected)
+            {
+                _offeredPid = game.Pid;
+                await StartAsync(game, askFirst: true);
+            }
+
+            return;
+        }
+
+        if (game != null)
+        {
+            _sawGameWhileActive = true;
+            _goneSinceUtc = null;
+            // The mode was switched on before the game, or the game restarted: give the new process priority.
+            if (_prioritizedPid != game.Pid && _network.IsAdmin && !_network.HasPriority(game.ExecutablePath))
+                await PrioritizeAsync(game, "Modo Dota 2 activo.");
+            await _wifi.RebalanceGameModeAsync();
+            return;
+        }
+
+        if (_sawGameWhileActive && Auto)
+        {
+            _goneSinceUtc ??= DateTime.UtcNow;
+            if (DateTime.UtcNow - _goneSinceUtc >= GoneGrace)
+                await StopAsync(automatic: true);
+            return;
+        }
+
+        await _wifi.RebalanceGameModeAsync();
+    }
+}

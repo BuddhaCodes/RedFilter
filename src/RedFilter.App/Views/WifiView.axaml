@@ -3,21 +3,96 @@
              xmlns:vm="using:RedFilter.ViewModels"
              x:Class="RedFilter.Views.WifiView"
              x:DataType="vm:WifiViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.colhead">
+      <Setter Property="Foreground" Value="{StaticResource FaintBrush}"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="LetterSpacing" Value="1"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Border.chip">
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="9,3"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Border.chip TextBlock">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+    </Style>
+    <Style Selector="Border.chip.bad">
+      <Setter Property="Background" Value="#2A1418"/>
+      <Setter Property="BorderBrush" Value="#5C2229"/>
+    </Style>
+    <Style Selector="Border.chip.bad TextBlock">
+      <Setter Property="Foreground" Value="#FF8A8C"/>
+    </Style>
+    <Style Selector="Border.chip.warn">
+      <Setter Property="Background" Value="{StaticResource WarnSoftBrush}"/>
+      <Setter Property="BorderBrush" Value="#5A4416"/>
+    </Style>
+    <Style Selector="Border.chip.warn TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource WarnBrush}"/>
+    </Style>
+    <Style Selector="Border.chip.hot">
+      <Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+      <Setter Property="BorderBrush" Value="#6B2226"/>
+    </Style>
+    <Style Selector="Border.chip.hot TextBlock">
+      <Setter Property="Foreground" Value="#FF7A7D"/>
+    </Style>
+    <Style Selector="Border.role">
+      <Setter Property="CornerRadius" Value="5"/>
+      <Setter Property="Padding" Value="6,1"/>
+      <Setter Property="Background" Value="#1E2A3D"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Border.role TextBlock">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="#9DB7FF"/>
+    </Style>
+    <Style Selector="Button.more">
+      <Setter Property="Width" Value="36"/>
+      <Setter Property="MinWidth" Value="36"/>
+      <Setter Property="MinHeight" Value="32"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="FontSize" Value="18"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="HorizontalAlignment" Value="Right"/>
+    </Style>
+    <Style Selector="Border.stat">
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="10,4"/>
+      <Setter Property="Background" Value="{StaticResource RaisedBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+  </UserControl.Styles>
+
   <Border Classes="card" Padding="0">
     <DockPanel>
-      <Grid DockPanel.Dock="Top" Margin="20,18,20,12" ColumnDefinitions="*,Auto">
+      <!-- Title -->
+      <Grid DockPanel.Dock="Top" Margin="20,18,20,10" ColumnDefinitions="*,Auto">
         <StackPanel Spacing="4">
           <TextBlock Classes="kicker" Text="MI WI-FI"/>
-          <TextBlock Classes="section" Text="Quién está usando la red"/>
+          <TextBlock Classes="section" Text="Dispositivos en tu red"/>
           <TextBlock Text="{Binding RouterName}" Classes="small" IsVisible="{Binding Connected}"/>
         </StackPanel>
-        <Button Grid.Column="1" Content="Actualizar" VerticalAlignment="Top"
+        <Button Grid.Column="1" Content="↻  Actualizar" VerticalAlignment="Top" Classes="small-btn"
                 IsVisible="{Binding Connected}" IsEnabled="{Binding !Busy}" Click="Refresh_Click"/>
       </Grid>
 
       <!-- Connect: only the password, the address comes from Windows -->
-      <Border DockPanel.Dock="Top" Margin="20,0,20,12" Padding="14" CornerRadius="10" Background="#F8FAFC"
-              BorderBrush="#E2E8F0" BorderThickness="1" IsVisible="{Binding ShowConnect}">
+      <Border DockPanel.Dock="Top" Margin="20,0,20,12" Padding="14" Classes="panel" IsVisible="{Binding ShowConnect}">
         <StackPanel Spacing="10">
           <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
           <Grid ColumnDefinitions="*,8,Auto" IsVisible="{Binding NeedsPassword}">
@@ -29,65 +104,115 @@
         </StackPanel>
       </Border>
 
-      <StackPanel DockPanel.Dock="Bottom" Margin="20,8,20,16" Spacing="8">
-        <TextBlock Text="{Binding Status}" Classes="note" IsVisible="{Binding Connected}"/>
+      <!-- Summary: counts instead of a paragraph -->
+      <WrapPanel DockPanel.Dock="Top" Margin="20,0,20,10" IsVisible="{Binding Connected}">
+        <Border Classes="stat" Margin="0,0,8,6">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse Classes="dot good" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding ConnectedText}" FontSize="12" FontWeight="SemiBold"/>
+          </StackPanel>
+        </Border>
+        <Border Classes="stat" Margin="0,0,8,6" IsVisible="{Binding HasLimited}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse Classes="dot" Fill="{StaticResource WarnBrush}" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding LimitedText}" FontSize="12" FontWeight="SemiBold"/>
+          </StackPanel>
+        </Border>
+        <Border Classes="stat" Margin="0,0,8,6" IsVisible="{Binding HasBlocked}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse Classes="dot hot" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding BlockedText}" FontSize="12" FontWeight="SemiBold"/>
+          </StackPanel>
+        </Border>
+      </WrapPanel>
+
+      <!-- Saved-but-inactive block list, explained once instead of on every row -->
+      <Border DockPanel.Dock="Top" Margin="20,0,20,10" Padding="12,10" CornerRadius="10" Classes="warn" IsVisible="{Binding HasNotice}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="{Binding SavedListText}" Classes="note warn-text" VerticalAlignment="Center"/>
+          <Button Grid.Column="1" Content="Limpiar lista" Classes="small-btn" Margin="12,0,0,0" VerticalAlignment="Center"
+                  IsVisible="{Binding HasSavedList}" IsEnabled="{Binding !Busy}" Click="ClearList_Click"/>
+        </Grid>
+      </Border>
+
+      <!-- Footer -->
+      <StackPanel DockPanel.Dock="Bottom" Margin="20,8,20,14" Spacing="6">
+        <TextBlock Text="{Binding Status}" Classes="note" IsVisible="{Binding HasStatus}"/>
         <Button Content="Olvidar la contraseña del router" Classes="link" HorizontalAlignment="Left"
                 IsVisible="{Binding Connected}" Click="Forget_Click"/>
       </StackPanel>
 
-      <Border BorderBrush="#E5E7EB" BorderThickness="0,1,0,1" IsVisible="{Binding Connected}">
+      <DockPanel IsVisible="{Binding Connected}">
+        <!-- Column headers -->
+        <Border DockPanel.Dock="Top" Classes="divider" BorderThickness="0,1,0,1" Padding="20,8" Background="{StaticResource BgBrush}">
+          <Grid ColumnDefinitions="26,*,150,128,118,40">
+            <TextBlock Text="#" Classes="colhead"/>
+            <TextBlock Grid.Column="1" Text="DISPOSITIVO" Classes="colhead"/>
+            <TextBlock Grid.Column="2" Text="USO AHORA" Classes="colhead"/>
+            <TextBlock Grid.Column="3" Text="ESTADO" Classes="colhead"/>
+          </Grid>
+        </Border>
+
         <ScrollViewer>
           <StackPanel>
             <ItemsControl ItemsSource="{Binding Devices}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:WifiDeviceRow">
-                  <Border Classes="row">
-                    <Grid ColumnDefinitions="32,*,180,150">
+                  <Border Classes="row" ToolTip.Tip="{Binding Tooltip}">
+                    <Grid ColumnDefinitions="26,*,150,128,118,40">
                       <TextBlock Text="{Binding Rank}" Classes="rank" VerticalAlignment="Center"/>
-                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" Margin="0,0,8,0">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                          <Border Classes="badge" IsVisible="{Binding HasBadge}">
-                            <TextBlock Text="{Binding Badge}"/>
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="190"/>
+                          <Border Classes="role" IsVisible="{Binding HasRole}">
+                            <TextBlock Text="{Binding Role}"/>
                           </Border>
                         </StackPanel>
                         <TextBlock Text="{Binding Detail}" Classes="small"/>
                       </StackPanel>
-                      <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4" Margin="12,0">
-                        <Border Height="6" CornerRadius="3" Background="#E5E7EB" Width="160" HorizontalAlignment="Left">
-                          <Border Height="6" CornerRadius="3" Background="#2563EB" Width="{Binding BarWidth}" HorizontalAlignment="Left"/>
+
+                      <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="4" Margin="0,0,10,0" ToolTip.Tip="{Binding Rate}">
+                        <Border Height="6" CornerRadius="3" Background="{StaticResource BarTrackBrush}" Width="120" HorizontalAlignment="Left">
+                          <Border Height="6" CornerRadius="3" Background="{StaticResource BarBrush}" Width="{Binding BarWidth}" HorizontalAlignment="Left"/>
                         </Border>
                         <TextBlock Text="{Binding Activity}" Classes="small"/>
                       </StackPanel>
-                      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Right">
-                        <Button Content="Bloquear" Classes="danger small-btn" IsVisible="{Binding CanBlock}" Click="Block_Click" Tag="{Binding}"/>
-                        <Button Content="{Binding UnblockLabel}" Classes="small-btn" IsVisible="{Binding CanUnblock}" Click="Unblock_Click" Tag="{Binding}"/>
-                      </StackPanel>
+
+                      <Border Grid.Column="3" Classes="chip" Classes.bad="{Binding StateBad}" Classes.warn="{Binding StateWarn}"
+                              Classes.hot="{Binding StateHot}" ToolTip.Tip="{Binding StateTip}">
+                        <TextBlock Text="{Binding State}"/>
+                      </Border>
+
+                      <Button Grid.Column="4" Content="{Binding PrimaryLabel}" Classes="small-btn" HorizontalAlignment="Right"
+                              IsVisible="{Binding HasPrimary}" Click="Primary_Click" Tag="{Binding}"/>
+                      <Button Grid.Column="5" Content="⋯" Classes="more" ToolTip.Tip="Más acciones"
+                              IsVisible="{Binding HasMenu}" Click="Menu_Click" Tag="{Binding}"/>
                     </Grid>
                   </Border>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <StackPanel IsVisible="{Binding HasListedOffline}" Margin="20,16,20,4" Spacing="2">
-              <TextBlock Classes="kicker" Text="EN LA LISTA DE BLOQUEO, NO CONECTADOS"/>
+            <StackPanel IsVisible="{Binding HasListedOffline}" Margin="20,18,20,6" Spacing="2">
+              <TextBlock Classes="kicker" Text="EN LA LISTA DE BLOQUEO · NO CONECTADOS"/>
               <TextBlock Classes="note" Text="Guardados en tu router. Si el bloqueo está encendido, no pueden entrar."/>
             </StackPanel>
             <ItemsControl ItemsSource="{Binding ListedOffline}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:WifiDeviceRow">
-                  <Border Classes="row">
-                    <Grid ColumnDefinitions="32,*,Auto">
-                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                          <Border Classes="badge" IsVisible="{Binding HasBadge}">
-                            <TextBlock Text="{Binding Badge}"/>
-                          </Border>
-                        </StackPanel>
+                  <Border Classes="row" ToolTip.Tip="{Binding Tooltip}">
+                    <Grid ColumnDefinitions="26,*,150,128,118,40">
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                         <TextBlock Text="{Binding Detail}" Classes="small"/>
                       </StackPanel>
-                      <Button Grid.Column="2" Content="Quitar de la lista" Classes="small-btn" Click="Unblock_Click" Tag="{Binding}"/>
+                      <TextBlock Grid.Column="2" Text="Desconectado" Classes="small" VerticalAlignment="Center"/>
+                      <Border Grid.Column="3" Classes="chip" Classes.bad="{Binding StateBad}" ToolTip.Tip="{Binding StateTip}">
+                        <TextBlock Text="{Binding State}"/>
+                      </Border>
+                      <Button Grid.Column="4" Grid.ColumnSpan="2" Content="{Binding ForgetLabel}" Classes="small-btn"
+                              HorizontalAlignment="Right" Click="Unblock_Click" Tag="{Binding}"/>
                     </Grid>
                   </Border>
                 </DataTemplate>
@@ -95,7 +220,7 @@
             </ItemsControl>
           </StackPanel>
         </ScrollViewer>
-      </Border>
+      </DockPanel>
     </DockPanel>
   </Border>
 </UserControl>

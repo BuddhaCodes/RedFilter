@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RedFilter.ViewModels"
+             x:Class="RedFilter.Views.GameModeView"
+             x:DataType="vm:GameModeViewModel">
+  <Border Classes="hero" Classes.on="{Binding Active}" Padding="24,20">
+    <Grid ColumnDefinitions="Auto,20,*,20,Auto">
+      <!-- Emblem -->
+      <Border Width="64" Height="64" CornerRadius="14" Background="{StaticResource AccentSoftBrush}"
+              BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" VerticalAlignment="Top">
+        <Viewbox Margin="14">
+          <Path Fill="{StaticResource AccentBrush}"
+                Data="M12 1 L22 6 L22 13 C22 18 17.5 22 12 23 C6.5 22 2 18 2 13 L2 6 Z M12 5 L6 8 L6 13 C6 16 8.5 18.6 12 19.4 C15.5 18.6 18 16 18 13 L18 8 Z M9 10 L15 10 L15 12 L9 12 Z M9 13.5 L13 13.5 L13 15.5 L9 15.5 Z"/>
+        </Viewbox>
+      </Border>
+
+      <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <TextBlock Classes="hero-title" Text="{Binding Title}"/>
+          <Border Classes="pill" Classes.good="{Binding DotaRunning}" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Ellipse Classes="dot" Classes.good="{Binding DotaRunning}" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding DotaText}" FontSize="12" FontWeight="SemiBold"/>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+        <TextBlock Text="{Binding Detail}" Classes="note" MaxWidth="820" HorizontalAlignment="Left"/>
+        <CheckBox IsChecked="{Binding Auto}" Margin="0,4,0,0"
+                  Content="Ofrecerlo al abrir Dota 2 y apagarlo solo al cerrarlo"/>
+      </StackPanel>
+
+      <Button Grid.Column="4" Classes="hero accent" VerticalAlignment="Center"
+              Content="{Binding ToggleLabel}" IsEnabled="{Binding CanToggle}" Click="Toggle_Click"/>
+    </Grid>
+  </Border>
+</UserControl>

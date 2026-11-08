@@ -11,6 +11,8 @@ public sealed class TdW8961Session : IDisposable
     private readonly string _username;
     private readonly string _password;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    // Lives as long as the session, so a sign-in after the router logs us out keeps the packet history.
+    private readonly WifiUsageTracker _usage = new();
     private IRouterTransport? _transport;
     private TdW8961Client? _client;
 
@@ -87,6 +89,6 @@ public sealed class TdW8961Session : IDisposable
         _client = null;
         _transport = _transportFactory(_endpoint);
         await TdW8961Login.LoginAsync(_transport, _endpoint, _username, _password, cancellationToken);
-        _client = new TdW8961Client(_transport, _endpoint);
+        _client = new TdW8961Client(_transport, _endpoint, _usage);
     }
 }

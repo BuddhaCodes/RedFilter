@@ -56,7 +56,8 @@ public partial class App : Application
                 endpoint => new HttpRouterTransport(endpoint.Host, PinnedCertificate(store, endpoint.Host)),
                 prompt,
                 local);
-            desktop.MainWindow = new MainWindow(network, wifi);
+            var game = new GameModeViewModel(network, wifi, store, prompt);
+            desktop.MainWindow = new MainWindow(network, wifi, game);
             network.Start();
         }
 

@@ -101,6 +101,49 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     private bool _vpnActive;
     private string _vpnName = "";
 
+    /// <summary>Upload cap for the other programs on this PC while Dota 2 has priority.</summary>
+    public const long GameThrottleBitsPerSecond = 256_000;
+
+    public bool IsAdmin => _isAdmin;
+
+    /// <summary>The running Dota 2 process, from the last process sample.</summary>
+    public ProcessNetworkRow? FindDota() => _latest is { } latest ? GameDetector.FindDota(latest.Snapshot.Processes) : null;
+
+    public bool HasPriority(string? path) =>
+        FilterOn && path != null && string.Equals(_ownerPath, path, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Gives the game priority on this PC without asking again (the game mode already asked). Without
+    /// administrator rights Windows asks for them and RedFilter restarts; returns false in that case.
+    /// </summary>
+    public async Task<bool> PrioritizeGameAsync(ProcessNetworkRow game)
+    {
+        if (string.IsNullOrWhiteSpace(game.ExecutablePath))
+        {
+            Status = "Windows no deja ver la ruta de Dota 2, así que no se le puede dar prioridad en este PC.";
+            return false;
+        }
+
+        if (HasPriority(game.ExecutablePath))
+            return true;
+        var rate = QosPolicyPlanner.NormalizeThrottle(GameThrottleBitsPerSecond);
+        if (!_isAdmin)
+        {
+            RequestElevation(new QosLaunchRequest(false, game.Pid, game.ExecutablePath, game.Name, rate));
+            return false;
+        }
+
+        await ApplyOwnerAsync(game.Pid, game.Name, game.ExecutablePath, rate);
+        return HasPriority(game.ExecutablePath);
+    }
+
+    /// <summary>Ends the game's priority when the game mode ends. Only when RedFilter can do it without restarting.</summary>
+    public async Task EndGamePriorityAsync(string? path)
+    {
+        if (_isAdmin && (path == null ? FilterOn : HasPriority(path)))
+            await RemoveFilterAsync();
+    }
+
     public Task PrioritizeAsync(ProgramRow program)
     {
         Selected = Processes.FirstOrDefault(row => row.Pid == program.Pid);

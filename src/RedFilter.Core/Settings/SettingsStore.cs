@@ -15,6 +15,12 @@ public sealed class AppSettings
     public long ThrottleBitsPerSecond { get; set; } = 1_000_000;
     public string? RouterCertificateHost { get; set; }
     public string? RouterCertificateSha256 { get; set; }
+
+    /// <summary>Set while the Dota 2 mode is on: how to put the router back the way it was.</summary>
+    public RedFilter.Core.Router.TpLink.GameModeBackup? GameMode { get; set; }
+
+    /// <summary>Offer the Dota 2 mode when dota2.exe starts, and end it when the game closes.</summary>
+    public bool GameModeAuto { get; set; } = true;
 }
 
 public interface ISecretProtector
@@ -72,7 +78,9 @@ public sealed class SettingsStore
             NetworkOwnerPid = settings.NetworkOwnerPid,
             ThrottleBitsPerSecond = settings.ThrottleBitsPerSecond,
             RouterCertificateHost = settings.RouterCertificateHost,
-            RouterCertificateSha256 = settings.RouterCertificateSha256
+            RouterCertificateSha256 = settings.RouterCertificateSha256,
+            GameMode = settings.GameMode,
+            GameModeAuto = settings.GameModeAuto
         };
         WriteAtomically(SettingsPath, System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(copy, JsonOptions)));
     }

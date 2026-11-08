@@ -150,7 +150,8 @@ public static class QosPolicyPlanner
             $"Prioridad para {Path.GetFileName(ownerPath)} (todas sus ventanas y procesos).",
             $"Los demás programas quedan limitados a {RateText.BitsPerSecond(throttle)} de subida. Las descargas no se limitan.",
             "La marca de prioridad (DSCP " + OwnerDscp + ") solo ayuda si el router la respeta.",
-            "Sigue activo aunque cierres RedFilter; se borra al reiniciar Windows o con \"Quitar prioridad\"."
+            "Sigue activo aunque cierres RedFilter; se borra al reiniciar Windows o con \"Quitar prioridad\".",
+            "Con RedFilter abierto, los programas que empiecen a usar la red también se limitan solos; con RedFilter cerrado, no."
         };
 
         if (IsProtected(owner))

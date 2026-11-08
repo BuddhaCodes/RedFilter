@@ -7,10 +7,10 @@
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
-        Background="White"
+        Background="{StaticResource CardBrush}"
         FontFamily="Inter, Segoe UI">
   <StackPanel Margin="28" Spacing="20">
-    <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="15" Foreground="#111827" LineHeight="22"/>
+    <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="15" LineHeight="22"/>
     <TextBox x:Name="InputBox" IsVisible="False"/>
     <WrapPanel x:Name="Buttons" HorizontalAlignment="Right"/>
   </StackPanel>

@@ -22,7 +22,7 @@
 
       <Border DockPanel.Dock="Top" Margin="20,0,20,12" Padding="12,10" CornerRadius="10" Classes="warn"
               IsVisible="{Binding VpnActive}">
-        <TextBlock Text="{Binding VpnNote}" Classes="note" Foreground="#92400E"/>
+        <TextBlock Text="{Binding VpnNote}" Classes="note warn-text"/>
       </Border>
 
       <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,0,20,12" Spacing="10">
@@ -38,7 +38,7 @@
 
       <TextBlock DockPanel.Dock="Bottom" Margin="20,8,20,16" Text="{Binding Status}" Classes="note"/>
 
-      <Border BorderBrush="#E5E7EB" BorderThickness="0,1,0,1">
+      <Border Classes="divider">
         <ScrollViewer>
           <ItemsControl ItemsSource="{Binding Programs}">
             <ItemsControl.ItemTemplate>
@@ -52,7 +52,7 @@
                     <TextBlock Grid.Column="1" Text="{Binding Rate}" Classes="small" VerticalAlignment="Center" Margin="12,0"/>
                     <Button Grid.Column="2" Content="Priorizar" Classes="accent small-btn"
                             IsVisible="{Binding CanPrioritize}" Click="Prioritize_Click" Tag="{Binding}"/>
-                    <TextBlock Grid.Column="2" Text="Con prioridad" Foreground="#B45309" FontWeight="SemiBold"
+                    <TextBlock Grid.Column="2" Text="Con prioridad" Classes="hot"
                                VerticalAlignment="Center" IsVisible="{Binding IsOwner}"/>
                   </Grid>
                 </Border>

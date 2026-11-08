@@ -3,31 +3,36 @@
         xmlns:views="using:RedFilter.Views"
         x:Class="RedFilter.MainWindow"
         Title="RedFilter"
-        Width="1280"
-        Height="820"
-        MinWidth="980"
-        MinHeight="620"
+        Width="1320"
+        Height="880"
+        MinWidth="1000"
+        MinHeight="680"
         WindowStartupLocation="CenterScreen"
-        Background="#F4F5F7"
         FontFamily="Inter, Segoe UI"
         FontSize="14">
   <DockPanel>
-    <Border DockPanel.Dock="Top" Background="#0F172A" Padding="24,14">
+    <Border DockPanel.Dock="Top" Background="{StaticResource HeaderBrush}" Padding="24,14"
+            BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
       <StackPanel Orientation="Horizontal" Spacing="12">
-        <Border Width="32" Height="32" CornerRadius="8" Background="#2563EB">
-          <TextBlock Text="R" Foreground="White" FontSize="16" FontWeight="SemiBold"
+        <Border Width="34" Height="34" CornerRadius="9" Background="{StaticResource AccentBrush}">
+          <TextBlock Text="R" Foreground="White" FontSize="17" FontWeight="Black"
                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
         <StackPanel VerticalAlignment="Center">
-          <TextBlock Text="RedFilter" Foreground="White" FontSize="18" FontWeight="SemiBold"/>
-          <TextBlock Text="Prioriza tus programas y controla quién usa tu Wi-Fi" Foreground="#94A3B8" FontSize="12"/>
+          <TextBlock FontSize="18" FontWeight="Bold">
+            <Run Text="Red"/><Run Text="Filter" Foreground="{StaticResource AccentBrush}"/>
+          </TextBlock>
+          <TextBlock Text="Menos lag: prioriza tu juego y controla quién usa tu red" Classes="small"/>
         </StackPanel>
       </StackPanel>
     </Border>
 
-    <Grid Margin="20" ColumnDefinitions="5*,16,6*">
-      <views:PcView x:Name="PcPage" Grid.Column="0"/>
-      <views:WifiView x:Name="WifiPage" Grid.Column="2"/>
+    <Grid Margin="20" RowDefinitions="Auto,16,*">
+      <views:GameModeView x:Name="GamePage"/>
+      <Grid Grid.Row="2" ColumnDefinitions="5*,16,6*">
+        <views:PcView x:Name="PcPage" Grid.Column="0"/>
+        <views:WifiView x:Name="WifiPage" Grid.Column="2"/>
+      </Grid>
     </Grid>
   </DockPanel>
 </Window>
