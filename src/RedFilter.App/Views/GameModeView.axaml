@@ -3,47 +3,181 @@
              xmlns:vm="using:RedFilter.ViewModels"
              x:Class="RedFilter.Views.GameModeView"
              x:DataType="vm:GameModeViewModel">
-  <Border Classes="hero" Classes.on="{Binding Active}" Padding="24,20">
-    <Grid ColumnDefinitions="Auto,20,*,20,Auto">
-      <!-- Emblem -->
-      <Border Width="64" Height="64" CornerRadius="14" Background="{StaticResource AccentSoftBrush}"
-              BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" VerticalAlignment="Top">
-        <Viewbox Margin="14">
-          <Path Fill="{StaticResource AccentBrush}"
-                Data="M12 1 L22 6 L22 13 C22 18 17.5 22 12 23 C6.5 22 2 18 2 13 L2 6 Z M12 5 L6 8 L6 13 C6 16 8.5 18.6 12 19.4 C15.5 18.6 18 16 18 13 L18 8 Z M9 10 L15 10 L15 12 L9 12 Z M9 13.5 L13 13.5 L13 15.5 L9 15.5 Z"/>
-        </Viewbox>
-      </Border>
+  <UserControl.Styles>
+    <!-- The power button: a round toggle in the middle of the panel. -->
+    <Style Selector="Button.power">
+      <Setter Property="Width" Value="104"/>
+      <Setter Property="Height" Value="104"/>
+      <Setter Property="MinWidth" Value="104"/>
+      <Setter Property="MinHeight" Value="104"/>
+      <Setter Property="CornerRadius" Value="52"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="BorderThickness" Value="2"/>
+      <Setter Property="BorderBrush" Value="#3A4658"/>
+      <Setter Property="Background" Value="{StaticResource RaisedBrush}"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="RenderTransform" Value="scale(1)"/>
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.25"/>
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.25"/>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15"/>
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.power Path">
+      <Setter Property="Stroke" Value="{StaticResource MutedBrush}"/>
+      <Setter Property="StrokeThickness" Value="2.4"/>
+      <Setter Property="StrokeLineCap" Value="Round"/>
+      <Setter Property="Width" Value="34"/>
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="Stretch" Value="Uniform"/>
+    </Style>
+    <Style Selector="Button.power TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+    </Style>
+    <Style Selector="Button.power:pointerover">
+      <Setter Property="RenderTransform" Value="scale(1.04)"/>
+    </Style>
+    <Style Selector="Button.power:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource HoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+    </Style>
+    <Style Selector="Button.power:pressed">
+      <Setter Property="RenderTransform" Value="scale(0.96)"/>
+    </Style>
+    <Style Selector="Button.power:disabled /template/ ContentPresenter">
+      <Setter Property="Opacity" Value="0.5"/>
+    </Style>
 
-      <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center">
-        <StackPanel Orientation="Horizontal" Spacing="12">
-          <TextBlock Classes="hero-title" Text="{Binding Title}"/>
-          <Border Classes="pill" Classes.good="{Binding DotaRunning}" VerticalAlignment="Center">
+    <!-- On: filled red with a glow. -->
+    <Style Selector="Button.power.on">
+      <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+      <Setter Property="BorderBrush" Value="#FF7A7D"/>
+    </Style>
+    <Style Selector="Button.power.on /template/ ContentPresenter">
+      <Setter Property="BoxShadow" Value="0 0 32 4 #88E5383B"/>
+    </Style>
+    <Style Selector="Button.power.on:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#F04447"/>
+      <Setter Property="BorderBrush" Value="#FFB3B4"/>
+    </Style>
+    <Style Selector="Button.power.on Path">
+      <Setter Property="Stroke" Value="White"/>
+    </Style>
+    <Style Selector="Button.power.on TextBlock">
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+
+    <!-- A ring that keeps pulsing outwards while the mode is on. Keyframe animations cannot drive
+         RenderTransform (only transitions can), so the ring grows by animating its size instead. -->
+    <Style Selector="Ellipse.pulse">
+      <Setter Property="Opacity" Value="0"/>
+      <Setter Property="Stroke" Value="{StaticResource AccentBrush}"/>
+      <Setter Property="StrokeThickness" Value="2"/>
+    </Style>
+    <Style Selector="Ellipse.pulse.on">
+      <Style.Animations>
+        <Animation Duration="0:0:2" IterationCount="Infinite" Easing="CubicEaseOut">
+          <KeyFrame Cue="0%">
+            <Setter Property="Opacity" Value="0.7"/>
+            <Setter Property="Width" Value="104"/>
+            <Setter Property="Height" Value="104"/>
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Width" Value="140"/>
+            <Setter Property="Height" Value="140"/>
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.pulse.on.late">
+      <Style.Animations>
+        <Animation Duration="0:0:2" IterationCount="Infinite" Delay="0:0:1" Easing="CubicEaseOut">
+          <KeyFrame Cue="0%">
+            <Setter Property="Opacity" Value="0.5"/>
+            <Setter Property="Width" Value="104"/>
+            <Setter Property="Height" Value="104"/>
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Width" Value="140"/>
+            <Setter Property="Height" Value="140"/>
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
+    <Style Selector="TextBlock.state">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="LetterSpacing" Value="2"/>
+      <Setter Property="Foreground" Value="{StaticResource FaintBrush}"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="TextBlock.state.on">
+      <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Border Classes="hero" Classes.on="{Binding Active}" Padding="24,20">
+    <Grid ColumnDefinitions="*,32,Auto,32,*">
+      <!-- Left: what the mode is -->
+      <Grid ColumnDefinitions="Auto,16,*" VerticalAlignment="Center">
+        <Border Width="56" Height="56" CornerRadius="14" Background="{StaticResource AccentSoftBrush}"
+                BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" VerticalAlignment="Top">
+          <Viewbox Margin="13">
+            <Path Fill="{StaticResource AccentBrush}"
+                  Data="M12 1 L22 6 L22 13 C22 18 17.5 22 12 23 C6.5 22 2 18 2 13 L2 6 Z M12 5 L6 8 L6 13 C6 16 8.5 18.6 12 19.4 C15.5 18.6 18 16 18 13 L18 8 Z M9 10 L15 10 L15 12 L9 12 Z M9 13.5 L13 13.5 L13 15.5 L9 15.5 Z"/>
+          </Viewbox>
+        </Border>
+        <StackPanel Grid.Column="2" Spacing="8">
+          <TextBlock Classes="hero-title" Text="MODO DOTA 2"/>
+          <Border Classes="pill" Classes.good="{Binding DotaRunning}" HorizontalAlignment="Left">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <Ellipse Classes="dot" Classes.good="{Binding DotaRunning}" VerticalAlignment="Center"/>
               <TextBlock Text="{Binding DotaText}" FontSize="12" FontWeight="SemiBold"/>
             </StackPanel>
           </Border>
+          <TextBlock Text="{Binding Detail}" Classes="note"/>
         </StackPanel>
-        <TextBlock Text="{Binding Detail}" Classes="note" MaxWidth="820" HorizontalAlignment="Left"/>
-        <WrapPanel Margin="0,6,0,0">
-          <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,24,4">
-            <TextBlock Text="Nivel" Classes="field" VerticalAlignment="Center"/>
-            <ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding Level}" MinWidth="140" IsEnabled="{Binding CanToggle}">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:LevelChoice">
-                  <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-            <TextBlock Text="{Binding LevelDescription}" Classes="small" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
-          </StackPanel>
-          <CheckBox IsChecked="{Binding Auto}" Margin="0,0,0,4"
-                    Content="Ofrecerlo al abrir Dota 2 y apagarlo solo al cerrarlo"/>
-        </WrapPanel>
+      </Grid>
+
+      <!-- Centre: the power button -->
+      <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="10">
+        <Panel Width="140" Height="140">
+          <Ellipse Classes="pulse" Classes.on="{Binding Active}" Width="104" Height="104"/>
+          <Ellipse Classes="pulse late" Classes.on="{Binding Active}" Width="104" Height="104"/>
+          <Button Classes="power" Classes.on="{Binding Active}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                  IsEnabled="{Binding CanToggle}" Click="Toggle_Click" ToolTip.Tip="{Binding ToggleTip}">
+            <StackPanel Spacing="4">
+              <!-- Power symbol -->
+              <Path Data="M12 2 L12 11 M6.3 5.7 A8 8 0 1 0 17.7 5.7" HorizontalAlignment="Center"/>
+              <TextBlock Text="{Binding ToggleLabel}" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+        </Panel>
+        <TextBlock Classes="state" Classes.on="{Binding Active}" Text="{Binding StateLabel}"/>
       </StackPanel>
 
-      <Button Grid.Column="4" Classes="hero accent" VerticalAlignment="Center"
-              Content="{Binding ToggleLabel}" IsEnabled="{Binding CanToggle}" Click="Toggle_Click"/>
+      <!-- Right: settings -->
+      <StackPanel Grid.Column="4" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="10" MaxWidth="380">
+        <TextBlock Text="NIVEL" Classes="kicker"/>
+        <ComboBox ItemsSource="{Binding Levels}" SelectedItem="{Binding Level}" MinWidth="200" IsEnabled="{Binding CanToggle}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:LevelChoice">
+              <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Text="{Binding LevelDescription}" Classes="small" TextWrapping="Wrap"/>
+        <CheckBox IsChecked="{Binding Auto}" Margin="0,4,0,0">
+          <TextBlock Text="Ofrecerlo al abrir Dota 2 y apagarlo solo al cerrarlo" TextWrapping="Wrap" FontSize="13"/>
+        </CheckBox>
+      </StackPanel>
     </Grid>
   </Border>
 </UserControl>

@@ -83,13 +83,15 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
     private const string IdleDetail =
         "Reserva la línea para este PC, limita a todos los demás dispositivos de la casa y da prioridad a Dota 2 frente a los otros programas.";
 
-    public bool Active { get => _active; private set { if (Set(ref _active, value)) { Raise(nameof(Title)); Raise(nameof(ToggleLabel)); } } }
-    public bool Busy { get => _busy; private set { if (Set(ref _busy, value)) Raise(nameof(CanToggle)); } }
+    public bool Active { get => _active; private set { if (Set(ref _active, value)) { Raise(nameof(Title)); Raise(nameof(ToggleLabel)); Raise(nameof(StateLabel)); Raise(nameof(ToggleTip)); } } }
+    public bool Busy { get => _busy; private set { if (Set(ref _busy, value)) { Raise(nameof(CanToggle)); Raise(nameof(ToggleLabel)); Raise(nameof(StateLabel)); } } }
     public bool DotaRunning { get => _dotaRunning; private set => Set(ref _dotaRunning, value); }
     public string Detail { get => _detail; private set => Set(ref _detail, value); }
     public string DotaText { get => _dotaText; private set => Set(ref _dotaText, value); }
     public string Title => Active ? "MODO DOTA 2 ACTIVO" : "MODO DOTA 2";
-    public string ToggleLabel => Active ? "Apagar" : "Activar";
+    public string ToggleLabel => Busy ? "…" : Active ? "APAGAR" : "ACTIVAR";
+    public string StateLabel => Busy ? "APLICANDO" : Active ? "ACTIVO" : "APAGADO";
+    public string ToggleTip => Active ? "Apagar el modo y devolver la red a como estaba" : "Activar el modo Dota 2";
     public bool CanToggle => !Busy;
 
     public bool Auto
