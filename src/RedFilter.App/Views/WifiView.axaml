@@ -91,16 +91,23 @@
                 IsVisible="{Binding Connected}" IsEnabled="{Binding !Busy}" Click="Refresh_Click"/>
       </Grid>
 
-      <!-- Connect: only the password, the address comes from Windows -->
-      <Border DockPanel.Dock="Top" Margin="20,0,20,12" Padding="14" Classes="panel" IsVisible="{Binding ShowConnect}">
-        <StackPanel Spacing="10">
+      <!-- Connect: address and user come pre-filled (saved ones, or Windows' gateway and "admin") -->
+      <Border DockPanel.Dock="Top" Margin="20,0,20,12" Padding="16" Classes="panel" IsVisible="{Binding ShowConnect}">
+        <StackPanel Spacing="12">
           <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
-          <Grid ColumnDefinitions="*,8,Auto" IsVisible="{Binding NeedsPassword}">
-            <TextBox x:Name="PasswordBox" PasswordChar="●" PlaceholderText="Contraseña del router" KeyDown="Password_KeyDown"/>
-            <Button Grid.Column="2" Content="Conectar" Classes="accent" IsEnabled="{Binding !Busy}" Click="Connect_Click"/>
+          <Grid ColumnDefinitions="Auto,12,*" RowDefinitions="Auto,8,Auto,8,Auto" IsVisible="{Binding NeedsPassword}">
+            <TextBlock Text="Dirección" Classes="field" VerticalAlignment="Center"/>
+            <TextBox Grid.Column="2" Text="{Binding AddressInput}" PlaceholderText="192.168.1.1" KeyDown="Password_KeyDown"/>
+            <TextBlock Grid.Row="2" Text="Usuario" Classes="field" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding UsernameInput}" PlaceholderText="admin" KeyDown="Password_KeyDown"/>
+            <TextBlock Grid.Row="4" Text="Contraseña" Classes="field" VerticalAlignment="Center"/>
+            <Grid Grid.Row="4" Grid.Column="2" ColumnDefinitions="*,8,Auto">
+              <TextBox x:Name="PasswordBox" PasswordChar="●" PlaceholderText="Contraseña del router" KeyDown="Password_KeyDown"/>
+              <Button Grid.Column="2" Content="Conectar" Classes="accent" IsEnabled="{Binding !Busy}" Click="Connect_Click"/>
+            </Grid>
           </Grid>
           <CheckBox x:Name="RememberBox" IsChecked="True" IsVisible="{Binding NeedsPassword}"
-                    Content="Recordarla en este PC (cifrada para tu usuario de Windows)"/>
+                    Content="Recordar la contraseña en este PC (cifrada para tu usuario de Windows)"/>
         </StackPanel>
       </Border>
 
@@ -138,7 +145,7 @@
       <!-- Footer -->
       <StackPanel DockPanel.Dock="Bottom" Margin="20,8,20,14" Spacing="6">
         <TextBlock Text="{Binding Status}" Classes="note" IsVisible="{Binding HasStatus}"/>
-        <Button Content="Olvidar la contraseña del router" Classes="link" HorizontalAlignment="Left"
+        <Button Content="Olvidar la contraseña / cambiar de router" Classes="link" HorizontalAlignment="Left"
                 IsVisible="{Binding Connected}" Click="Forget_Click"/>
       </StackPanel>
 

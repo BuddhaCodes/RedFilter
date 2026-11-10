@@ -42,6 +42,28 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
         _transportFactory = transportFactory;
         _prompt = prompt;
         _local = local;
+        var settings = store.Load();
+        _addressInput = settings.RouterAddress is { Length: > 0 } saved ? saved : DefaultAddress();
+        _usernameInput = string.IsNullOrWhiteSpace(settings.RouterUsername) ? DefaultUsername : settings.RouterUsername!;
+    }
+
+    private const string DefaultUsername = "admin";
+    private string _addressInput;
+    private string _usernameInput;
+
+    /// <summary>Router address typed in the connect panel. Starts as the saved one, or Windows' gateway.</summary>
+    public string AddressInput { get => _addressInput; set => Set(ref _addressInput, value ?? ""); }
+
+    /// <summary>Router user typed in the connect panel. Starts as the saved one, or "admin".</summary>
+    public string UsernameInput { get => _usernameInput; set => Set(ref _usernameInput, value ?? ""); }
+
+    private string DefaultAddress() => "http://" + (_local.Gateway ?? "192.168.1.1");
+
+    /// <summary>"192.168.1.1" is accepted as well as "http://192.168.1.1".</summary>
+    private static string NormalizeAddress(string text)
+    {
+        var trimmed = text.Trim().TrimEnd('/');
+        return trimmed.Contains("://", StringComparison.Ordinal) ? trimmed : "http://" + trimmed;
     }
 
     public ObservableCollection<WifiDeviceRow> Devices { get; } = new();
@@ -71,12 +93,14 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
     public bool ShowConnect => !Connected;
     public bool Busy { get => _busy; private set => Set(ref _busy, value); }
     public bool HasListedOffline => ListedOffline.Count > 0;
-    public string Address => _store.Load().RouterAddress is { Length: > 0 } saved ? saved : "http://" + (_local.Gateway ?? "192.168.1.1");
+    public string Address => NormalizeAddress(AddressInput);
 
     /// <summary>Signs in with the saved password, or asks for it on first use.</summary>
     public async Task StartAsync()
     {
         _local = await Task.Run(LocalNetworkInfo.Read);
+        if (string.IsNullOrWhiteSpace(_store.Load().RouterAddress))
+            AddressInput = DefaultAddress();
         var password = _store.LoadPassword();
         if (string.IsNullOrEmpty(password))
         {
@@ -92,6 +116,18 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
 
     public async Task ConnectAsync(string password, bool remember)
     {
+        if (string.IsNullOrWhiteSpace(AddressInput))
+        {
+            Status = "Escribe la dirección del router, por ejemplo 192.168.1.1.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(UsernameInput))
+        {
+            Status = "Escribe el usuario del router (en este modelo suele ser admin).";
+            return;
+        }
+
         if (string.IsNullOrEmpty(password))
         {
             Status = "Escribe la contraseña del router.";
@@ -109,7 +145,7 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var username = string.IsNullOrWhiteSpace(settings.RouterUsername) ? "admin" : settings.RouterUsername!;
+            var username = UsernameInput.Trim();
             using (var probe = _transportFactory(endpoint!))
             {
                 if (_local.VpnActive && !await CanReachAsync(probe, endpoint!))
@@ -131,13 +167,15 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
             _session = new TdW8961Session(_transportFactory, endpoint!, username, password);
             await _session.ConnectAsync(_cancel.Token);
 
+            // The address and the user are not secret: keep them so the panel is filled in next time.
+            // The password is saved (encrypted) only when asked to.
+            settings = _store.Load();
+            settings.RouterAddress = endpoint!.Origin.ToString().TrimEnd('/');
+            settings.RouterUsername = username;
+            _store.Save(settings);
+            AddressInput = settings.RouterAddress;
             if (remember)
-            {
                 _store.SavePassword(password);
-                settings.RouterAddress = endpoint!.Origin.ToString().TrimEnd('/');
-                settings.RouterUsername = username;
-                _store.Save(settings);
-            }
 
             NeedsPassword = false;
             Connected = true;
@@ -170,7 +208,7 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
         Devices.Clear();
         ListedOffline.Clear();
         Raise(nameof(HasListedOffline));
-        Status = "Contraseña olvidada. Escríbela de nuevo para conectar.";
+        Status = "Contraseña olvidada. Revisa la dirección y el usuario del router y escribe la contraseña para conectar.";
     }
 
     public async Task RefreshAsync()
