@@ -2,6 +2,8 @@
 #
 #   - Every run: tests, then a self-contained single-file RedFilter.exe (no .NET install needed),
 #     uploaded as the "RedFilter-win-x64" artifact on the run's page (Actions tab).
+#   - Every push to main: the exe replaces the files of the "latest" pre-release on the Releases page,
+#     so the newest build is always one click away.
 #   - A tag like v1.2.0: the same build, attached to a GitHub Release named after the tag.
 #
 #     git tag v1.2.0
@@ -86,6 +88,38 @@ jobs:
           path: TestResults/*.trx
           if-no-files-found: ignore
 
+  # Every push to main: move the "latest" tag to this commit and replace the "latest" pre-release.
+  latest:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: latest-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: RedFilter-win-x64
+          path: dist
+
+      - name: Publish the "latest" pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest dist/* \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Última compilación (${GITHUB_SHA::7})" \
+            --notes "Compilación automática del último commit de main ($GITHUB_SHA).
+
+          Descarga \`RedFilter-…-win-x64.exe\` y ejecútalo: no hace falta instalar .NET.
+          Windows SmartScreen puede avisar porque el ejecutable no está firmado: \"Más información\" > \"Ejecutar de todas formas\"."
+
+  # A tag like v1.2.0: a normal, permanent release.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
