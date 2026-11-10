@@ -1,5 +1,6 @@
 using Avalonia.Threading;
 using RedFilter.Core.Processes;
+using RedFilter.Core.Qos;
 using RedFilter.Core.Router;
 using RedFilter.Core.Router.TpLink;
 using RedFilter.Core.Text;
@@ -70,6 +71,8 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
         _prompt = prompt;
         var settings = store.Load();
         _auto = settings.GameModeAuto;
+        _soloGame = settings.GameModeSoloGame;
+        _allowDiscord = settings.GameModeAllowDiscord;
         _level = Levels.First(choice => choice.Profile.Level == GameModeProfile.For(settings.GameModeLevel).Level);
         _active = settings.GameMode != null;
         _detail = _active
@@ -93,6 +96,75 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
     public string StateLabel => Busy ? "APLICANDO" : Active ? "ACTIVO" : "APAGADO";
     public string ToggleTip => Active ? "Apagar el modo y devolver la red a como estaba" : "Activar el modo Dota 2";
     public bool CanToggle => !Busy;
+
+    private bool _soloGame;
+    private bool _allowDiscord;
+
+    /// <summary>While the mode is on and Dota is running, only Dota (and Steam) has internet on this PC.</summary>
+    public bool SoloGame
+    {
+        get => _soloGame;
+        set
+        {
+            if (!Set(ref _soloGame, value))
+                return;
+            var settings = _store.Load();
+            settings.GameModeSoloGame = value;
+            _store.Save(settings);
+            _ = ApplySoloAsync();
+        }
+    }
+
+    /// <summary>Keep Discord online (voice chat) while only Dota has internet.</summary>
+    public bool AllowDiscord
+    {
+        get => _allowDiscord;
+        set
+        {
+            if (!Set(ref _allowDiscord, value))
+                return;
+            var settings = _store.Load();
+            settings.GameModeAllowDiscord = value;
+            _store.Save(settings);
+            if (_network.SoloGameOn)
+                _ = RestartSoloAsync();
+        }
+    }
+
+    // Changes only the exceptions: programs already blocked stay blocked (except Discord, if now allowed).
+    private async Task RestartSoloAsync()
+    {
+        if (_network.FindDota()?.ExecutablePath is { } path)
+            await _network.StartSoloGameAsync(new SoloGameOptions(path, AllowDiscord));
+        Detail = SoloText();
+    }
+
+    /// <summary>Blocks or unblocks the other programs to match the switch, the mode and whether Dota is running.</summary>
+    private async Task ApplySoloAsync()
+    {
+        var game = _network.FindDota();
+        var want = Active && SoloGame && game?.ExecutablePath != null;
+        if (want && !_network.SoloGameOn)
+        {
+            if (!_network.IsAdmin)
+            {
+                Detail = "Para dejar internet solo a Dota hace falta RedFilter como administrador. Se pedirá al dar prioridad a Dota.";
+                return;
+            }
+
+            if (await _network.StartSoloGameAsync(new SoloGameOptions(game!.ExecutablePath!, AllowDiscord)))
+                Detail = SoloText();
+        }
+        else if (!want && _network.SoloGameOn)
+        {
+            await _network.StopSoloGameAsync();
+            if (Active)
+                Detail = "Los demás programas de este PC vuelven a tener internet (con la subida limitada).";
+        }
+    }
+
+    private string SoloText() =>
+        "Este PC: solo Dota 2 y Steam" + (AllowDiscord ? ", y Discord," : "") + " tienen internet. Los programas que se abran ahora también quedan sin red hasta que apagues el modo o cierres Dota.";
 
     public bool Auto
     {
@@ -132,7 +204,9 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
                 "•  Este PC tendrá reservada la mayor parte de la línea.\n" +
                 $"•  Nivel {Profile.Name}: los demás dispositivos de la casa compartirán como mucho {GameModePlanner.Describe(Profile.OthersDownBudgetKbps)} de bajada y {GameModePlanner.Describe(Profile.OthersUpBudgetKbps)} de subida.\n" +
                 $"   {Level.Description}\n" +
-                $"•  En este PC, Dota 2 tendrá prioridad y la subida de los otros programas se limita a {RateText.BitsPerSecond(Profile.PcOtherProgramsUploadBits)}.\n\n" +
+                (SoloGame
+                    ? "•  En este PC, solo Dota 2 y Steam" + (AllowDiscord ? " (y Discord)" : "") + " tendrán internet: los demás programas se quedan sin red mientras juegas.\n\n"
+                    : $"•  En este PC, Dota 2 tendrá prioridad y la subida de los otros programas se limita a {RateText.BitsPerSecond(Profile.PcOtherProgramsUploadBits)}.\n\n") +
                 "Al aplicar los cambios, el router puede tardar unos segundos. Todo vuelve a como estaba al apagar el modo o al cerrar Dota 2." +
                 (_network.IsAdmin || game == null ? "" : "\n\nPara la prioridad en este PC, Windows pedirá permiso de administrador y RedFilter se reiniciará.")))
             return;
@@ -164,8 +238,15 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
     {
         _prioritizedPid = game.Pid;
         _gamePath = game.ExecutablePath;
-        if (await _network.PrioritizeGameAsync(game, Profile.PcOtherProgramsUploadBits))
-            Detail = routerText + $" Este PC: Dota 2 tiene prioridad y los demás programas suben a {RateText.BitsPerSecond(Profile.PcOtherProgramsUploadBits)} como mucho.";
+        if (!await _network.PrioritizeGameAsync(game, Profile.PcOtherProgramsUploadBits))
+            return;
+        Detail = routerText + $" Este PC: Dota 2 tiene prioridad y los demás programas suben a {RateText.BitsPerSecond(Profile.PcOtherProgramsUploadBits)} como mucho.";
+        if (SoloGame)
+        {
+            await ApplySoloAsync();
+            if (_network.SoloGameOn)
+                Detail = routerText + " " + SoloText();
+        }
     }
 
     private async Task ReapplyAsync()
@@ -200,6 +281,7 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
         {
             Detail = "Devolviendo el router a como estaba…";
             var routerText = await _wifi.StopGameModeAsync();
+            await _network.StopSoloGameAsync();
             await _network.EndGamePriorityAsync(_gamePath);
             Active = false;
             _prioritizedPid = null;
@@ -245,9 +327,15 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
             // The mode was switched on before the game, or the game restarted: give the new process priority.
             if (_prioritizedPid != game.Pid && _network.IsAdmin && !_network.HasPriority(game.ExecutablePath))
                 await PrioritizeAsync(game, "Modo Dota 2 activo.");
+            else if (SoloGame && _network.IsAdmin && !_network.SoloGameOn)
+                await ApplySoloAsync();
             await _wifi.RebalanceGameModeAsync();
             return;
         }
+
+        // Dota closed: give the other programs their internet back right away, even before the mode ends.
+        if (_network.SoloGameOn)
+            await ApplySoloAsync();
 
         if (_sawGameWhileActive && Auto)
         {

@@ -19,7 +19,7 @@ Windows 10/11 · .NET 10 · Avalonia 12 · tema oscuro
 
 | Función | En una frase |
 |---|---|
-| **Modo Dota 2** | Un botón: reserva la línea para este PC, frena a todos los demás dispositivos de la casa y da prioridad a `dota2.exe`. |
+| **Modo Dota 2** | Un botón: reserva la línea para este PC, frena a todos los demás dispositivos de la casa y deja internet en este PC solo a Dota. |
 | **Mi Wi-Fi** | Muestra quién está usando la red ahora mismo, y te deja **limitar** o **bloquear** a cualquier dispositivo. |
 | **Este PC** | Da prioridad a un programa de este ordenador y limita la subida de los demás. |
 
@@ -65,13 +65,33 @@ Se elige en el panel y se puede cambiar con el modo encendido.
 
 Cada nivel usa la menor de las dos cifras (la fija o el porcentaje), así que en una línea lenta también aprieta. Con seis dispositivos en casa, en Agresivo a cada uno le tocan unos 163 kbps de bajada y 22 kbps de subida.
 
+### Solo Dota tiene internet en este PC
+
+Con la casilla **"En este PC, solo Dota tiene internet"** (marcada por defecto), mientras el modo está encendido y Dota abierto, los demás programas de este PC se quedan **sin internet**: navegador, descargas, actualizadores…
+
+- Usa reglas de **Windows Firewall** (grupo `RedFilter`) que bloquean la salida de cada programa que use la red. Los que se abran a mitad de partida también se bloquean.
+- **Siguen con internet:** Windows (DNS, servicios), la carpeta de Dota, **Steam** (Dota lo necesita para entrar y buscar partida) y RedFilter. **Discord** también, si marcas *Dejar internet a Discord (voz)*.
+- **Se quita sola:** al cerrar Dota, al apagar el modo o al cerrar RedFilter, todos los programas recuperan internet.
+- Las conexiones que un programa ya tenía abiertas pueden aguantar unos segundos; las nuevas se bloquean al momento.
+- Si la casilla está desmarcada, los demás programas siguen con internet, pero con la subida limitada según el nivel.
+
+<details>
+<summary>Si un programa se quedó sin internet (por ejemplo, tras un apagón)</summary>
+
+Las reglas del firewall sobreviven a un reinicio. RedFilter las quita al abrirse como administrador si el modo ya no está activo. También puedes quitarlas a mano desde un PowerShell como administrador:
+
+```powershell
+Remove-NetFirewallRule -Group RedFilter
+```
+</details>
+
 ### Detalles
 
 - **Automático:** si la casilla está marcada, la app te ofrece el modo cuando detecta Dota 2 y lo apaga sola 20 segundos después de que cierres el juego.
 - **Nuevos dispositivos:** si alguien se conecta durante la partida, recibe su regla en menos de un minuto.
 - **Tus límites se respetan:** si ya tenías a alguien limitado por debajo de lo que le toca, se queda con tu límite.
 - **Deshacer seguro:** antes de tocar el router, la app guarda cómo estaba. Al apagar el modo lo deja igual, aunque la app se haya cerrado entre medias.
-- **En este PC** hace falta permiso de administrador. Si RedFilter no lo tiene, Windows lo pide y la app se reinicia.
+- **En este PC** (prioridad y firewall) hace falta permiso de administrador. Si RedFilter no lo tiene, Windows lo pide y la app se reinicia.
 
 <details>
 <summary><b>¿Por qué funciona? (y por qué frena sobre todo la subida)</b></summary>
@@ -167,7 +187,7 @@ Prueba con el nivel **Extremo**. Si aun así no mejora, puede que haga falta enc
 - La contraseña del router solo se guarda si lo pides, cifrada con **DPAPI** para tu usuario de Windows, en `%LOCALAPPDATA%\RedFilter`. La dirección y el usuario se guardan sin cifrar, porque no son secretos.
 - El inicio de sesión envía lo mismo que la página del router: `md5(usuario)` y `md5(contraseña)`.
 - Antes de enviar la contraseña, la app comprueba que la dirección responde con la página de inicio de sesión de un TD-W8961N.
-- El PowerShell elevado ejecuta siempre el mismo script fijo (`-EncodedCommand`). Rutas, nombres y límites entran como JSON solo ASCII por la entrada estándar y nunca se interpretan como código. No se escribe nada en `%TEMP%`.
+- El PowerShell elevado ejecuta siempre un script fijo (`-EncodedCommand`), uno para QoS y otro para el firewall. Los bloqueos del firewall llevan el grupo `RedFilter` y nunca afectan a procesos de Windows ni a RedFilter. Rutas, nombres y límites entran como JSON solo ASCII por la entrada estándar y nunca se interpretan como código. No se escribe nada en `%TEMP%`.
 
 ## Para desarrolladores
 

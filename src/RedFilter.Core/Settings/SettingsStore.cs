@@ -24,6 +24,18 @@ public sealed class AppSettings
 
     /// <summary>How hard the Dota 2 mode squeezes everyone else.</summary>
     public RedFilter.Core.Router.TpLink.GameModeLevel GameModeLevel { get; set; } = RedFilter.Core.Router.TpLink.GameModeLevel.Aggressive;
+
+    /// <summary>While the Dota 2 mode is on, only the game (and Steam) keeps internet on this PC.</summary>
+    public bool GameModeSoloGame { get; set; } = true;
+
+    /// <summary>Keep Discord online while only the game has internet (voice chat).</summary>
+    public bool GameModeAllowDiscord { get; set; }
+
+    /// <summary>
+    /// Set while RedFilter has firewall blocks in place. Firewall rules survive a reboot, so if the app
+    /// stopped without removing them, the next elevated start removes them.
+    /// </summary>
+    public bool FirewallBlocksActive { get; set; }
 }
 
 public interface ISecretProtector
@@ -84,7 +96,10 @@ public sealed class SettingsStore
             RouterCertificateSha256 = settings.RouterCertificateSha256,
             GameMode = settings.GameMode,
             GameModeAuto = settings.GameModeAuto,
-            GameModeLevel = settings.GameModeLevel
+            GameModeLevel = settings.GameModeLevel,
+            GameModeSoloGame = settings.GameModeSoloGame,
+            GameModeAllowDiscord = settings.GameModeAllowDiscord,
+            FirewallBlocksActive = settings.FirewallBlocksActive
         };
         WriteAtomically(SettingsPath, System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(copy, JsonOptions)));
     }

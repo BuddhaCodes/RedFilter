@@ -8,7 +8,7 @@ public sealed class PowerShellQosPolicyStore : IQosPolicyStore
 {
     public async Task<IReadOnlyList<ActiveQosPolicy>> ReadAsync(CancellationToken cancellationToken)
     {
-        var output = await RunAsync(NetQosScript.QueryPayload(), cancellationToken);
+        var output = await RunAsync(NetQosScript.EncodedScript, NetQosScript.QueryPayload(), cancellationToken);
         return NetQosPolicyParser.Parse(output);
     }
 
@@ -18,14 +18,14 @@ public sealed class PowerShellQosPolicyStore : IQosPolicyStore
         var (remove, add) = QosPolicyReconciler.Diff(current, desired);
         if (remove.Count == 0 && add.Count == 0)
             return;
-        var output = await RunAsync(NetQosScript.ApplyPayload(remove, add), cancellationToken);
+        var output = await RunAsync(NetQosScript.EncodedScript, NetQosScript.ApplyPayload(remove, add), cancellationToken);
         if (!output.Contains("OK", StringComparison.Ordinal))
             throw new InvalidOperationException("Windows QoS did not confirm the policy change. " + Excerpt(output));
     }
 
     public async Task RemoveAllAsync(CancellationToken cancellationToken)
     {
-        var output = await RunAsync(NetQosScript.ClearPayload(), cancellationToken);
+        var output = await RunAsync(NetQosScript.EncodedScript, NetQosScript.ClearPayload(), cancellationToken);
         if (!output.Contains("OK", StringComparison.Ordinal))
             throw new InvalidOperationException("Windows QoS did not confirm that the policies were removed. " + Excerpt(output));
     }
@@ -33,7 +33,7 @@ public sealed class PowerShellQosPolicyStore : IQosPolicyStore
     // The script is a fixed string passed with -EncodedCommand, so nothing is written to %TEMP%
     // where another process could swap it before the elevated PowerShell runs it. The request
     // (paths, names, rates) goes in as ASCII JSON on stdin and is never parsed as PowerShell code.
-    private static async Task<string> RunAsync(string payload, CancellationToken cancellationToken)
+    internal static async Task<string> RunAsync(string encodedScript, string payload, CancellationToken cancellationToken)
     {
         using var process = new Process();
         process.StartInfo = new ProcessStartInfo
@@ -51,7 +51,7 @@ public sealed class PowerShellQosPolicyStore : IQosPolicyStore
         process.StartInfo.ArgumentList.Add("-ExecutionPolicy");
         process.StartInfo.ArgumentList.Add("Bypass");
         process.StartInfo.ArgumentList.Add("-EncodedCommand");
-        process.StartInfo.ArgumentList.Add(NetQosScript.EncodedScript);
+        process.StartInfo.ArgumentList.Add(encodedScript);
 
         try
         {
@@ -93,13 +93,13 @@ public sealed class PowerShellQosPolicyStore : IQosPolicyStore
         if (process.ExitCode != 0)
         {
             var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
-            throw new InvalidOperationException("Windows QoS did not change. " + Excerpt(detail));
+            throw new InvalidOperationException("Windows did not apply the change. " + Excerpt(detail));
         }
 
         return stdout;
     }
 
-    private static string Excerpt(string text)
+    internal static string Excerpt(string text)
     {
         var trimmed = text.Trim();
         if (trimmed.Length > 800)

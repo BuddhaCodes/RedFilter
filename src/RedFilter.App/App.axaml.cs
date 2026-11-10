@@ -47,7 +47,8 @@ public partial class App : Application
                 pendingLaunch,
                 new WindowsQosElevation(),
                 Shutdown,
-                prompt);
+                prompt,
+                new PowerShellFirewallStore());
             var local = LocalNetworkInfo.Read();
             network.VpnActive = local.VpnActive;
             network.VpnName = local.VpnName ?? "";

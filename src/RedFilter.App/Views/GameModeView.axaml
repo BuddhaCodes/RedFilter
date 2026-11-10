@@ -174,7 +174,14 @@
           </ComboBox.ItemTemplate>
         </ComboBox>
         <TextBlock Text="{Binding LevelDescription}" Classes="small" TextWrapping="Wrap"/>
-        <CheckBox IsChecked="{Binding Auto}" Margin="0,4,0,0">
+        <CheckBox IsChecked="{Binding SoloGame}" Margin="0,4,0,0" IsEnabled="{Binding CanToggle}"
+                  ToolTip.Tip="Con Windows Firewall: los demás programas de este PC se quedan sin internet mientras Dota está abierto. Windows, Steam y la carpeta de Dota siguen conectados.">
+          <TextBlock Text="En este PC, solo Dota tiene internet" TextWrapping="Wrap" FontSize="13"/>
+        </CheckBox>
+        <CheckBox IsChecked="{Binding AllowDiscord}" Margin="24,-6,0,0" IsVisible="{Binding SoloGame}" IsEnabled="{Binding CanToggle}">
+          <TextBlock Text="Dejar internet a Discord (voz)" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+        </CheckBox>
+        <CheckBox IsChecked="{Binding Auto}" Margin="0,0,0,0">
           <TextBlock Text="Ofrecerlo al abrir Dota 2 y apagarlo solo al cerrarlo" TextWrapping="Wrap" FontSize="13"/>
         </CheckBox>
       </StackPanel>

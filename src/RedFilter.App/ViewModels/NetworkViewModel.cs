@@ -24,6 +24,14 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     // can never re-create policies right after "Turn filter off" removed them.
     private readonly SemaphoreSlim _qosGate = new(1, 1);
     private readonly HashSet<string> _limitedPaths = new(StringComparer.OrdinalIgnoreCase);
+
+    // "Only the game has internet": Windows Firewall blocks for every other program using the network.
+    private readonly IFirewallBlockStore? _firewall;
+    private readonly HashSet<string> _blockedPaths = new(StringComparer.OrdinalIgnoreCase);
+    private volatile SoloGameOptions? _solo;
+    private string? _firewallFingerprint;
+    private DateTime _lastFirewallCheckUtc = DateTime.MinValue;
+    private int _blockedCount;
     private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan VerifyInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan SnapshotMaxAge = TimeSpan.FromSeconds(3);
@@ -55,8 +63,10 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         QosLaunchRequest? pendingLaunch = null,
         IQosElevation? elevation = null,
         Action? shutdown = null,
-        IUserPrompt? prompt = null)
+        IUserPrompt? prompt = null,
+        IFirewallBlockStore? firewall = null)
     {
+        _firewall = firewall;
         _source = source;
         _qos = qos;
         _store = store;
@@ -102,6 +112,92 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     private string _vpnName = "";
 
     public bool IsAdmin => _isAdmin;
+
+    /// <summary>True while other programs on this PC are cut off from the internet.</summary>
+    public bool SoloGameOn => _solo != null;
+    public int BlockedCount => _blockedCount;
+
+    /// <summary>
+    /// Cuts every other program using the network off from the internet with Windows Firewall, except
+    /// Windows itself, the game's folder, Steam and (optionally) Discord. New programs are blocked as
+    /// they appear. Needs administrator rights; returns false without them. Called again while on, it
+    /// only changes the exceptions: programs blocked so far stay blocked unless the new options keep them.
+    /// </summary>
+    public async Task<bool> StartSoloGameAsync(SoloGameOptions options)
+    {
+        if (!_isAdmin || _firewall == null)
+            return false;
+        _solo = options;
+        _firewallFingerprint = null;
+        var settings = _store.Load();
+        settings.FirewallBlocksActive = true;
+        _store.Save(settings);
+        await ReconcileFirewallAsync();
+        return _solo != null;
+    }
+
+    /// <summary>Removes every block RedFilter added, so all programs get their internet back.</summary>
+    public async Task StopSoloGameAsync()
+    {
+        _solo = null;
+        if (_firewall == null || !_isAdmin)
+            return;
+        await _qosGate.WaitAsync(_cancel.Token);
+        try
+        {
+            await _firewall.RemoveAllAsync(_cancel.Token);
+            _blockedPaths.Clear();
+            _firewallFingerprint = null;
+            _blockedCount = 0;
+            var settings = _store.Load();
+            settings.FirewallBlocksActive = false;
+            _store.Save(settings);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Status = "No se pudieron quitar los bloqueos del firewall: " + ex.Message;
+        }
+        finally
+        {
+            _qosGate.Release();
+        }
+    }
+
+    // Programs that start using the network while the mode is on are blocked too. Programs blocked
+    // earlier stay blocked even though they have no connections any more (that is the point).
+    private async Task ReconcileFirewallAsync()
+    {
+        var solo = _solo;
+        if (solo == null || _firewall == null)
+            return;
+        _lastFirewallCheckUtc = DateTime.UtcNow;
+        await _qosGate.WaitAsync(_cancel.Token);
+        try
+        {
+            if (_solo == null)
+                return;
+            var snapshot = await GetSnapshotAsync();
+            var desired = FirewallBlockPlanner.Build(snapshot.Processes, solo, _blockedPaths);
+            var fingerprint = FirewallBlockPlanner.Fingerprint(desired);
+            if (fingerprint == _firewallFingerprint)
+                return;
+            await _firewall.ApplyAsync(desired, _cancel.Token);
+            _firewallFingerprint = fingerprint;
+            _blockedPaths.Clear();
+            foreach (var block in desired)
+                _blockedPaths.Add(block.AppPath);
+            _blockedCount = desired.Count;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Post(() => Status = "No se pudo aplicar el bloqueo del firewall: " + ex.Message);
+        }
+        finally
+        {
+            _qosGate.Release();
+        }
+    }
+
 
     /// <summary>The running Dota 2 process, from the last process sample.</summary>
     public ProcessNetworkRow? FindDota() => _latest is { } latest ? GameDetector.FindDota(latest.Snapshot.Processes) : null;
@@ -202,6 +298,23 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     {
         if (!_isAdmin)
             return;
+
+        // Firewall rules survive a reboot. Blocks left over from a session that ended badly, with the
+        // Dota 2 mode no longer on, are removed so no program stays without internet.
+        var start = _store.Load();
+        if (_firewall != null && start.FirewallBlocksActive && start.GameMode == null)
+        {
+            try
+            {
+                await _firewall.RemoveAllAsync(_cancel.Token);
+                start.FirewallBlocksActive = false;
+                _store.Save(start);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Status = "Quedaron bloqueos del firewall de una sesión anterior y no se pudieron quitar: " + ex.Message;
+            }
+        }
 
         if (_pendingLaunch is { } pending)
         {
@@ -415,7 +528,30 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         _shutdown?.Invoke();
     }
 
-    public void Dispose() => _cancel.Cancel();
+    public void Dispose()
+    {
+        // Closing RedFilter gives every program its internet back: nothing would be left to lift the
+        // blocks when Dota closes. The router part stays until the mode is switched off.
+        if (_solo != null && _firewall != null && _isAdmin)
+        {
+            _solo = null;
+            try
+            {
+                if (Task.Run(() => _firewall.RemoveAllAsync(CancellationToken.None)).Wait(TimeSpan.FromSeconds(10)))
+                {
+                    var settings = _store.Load();
+                    settings.FirewallBlocksActive = false;
+                    _store.Save(settings);
+                }
+            }
+            catch (AggregateException)
+            {
+                // The next elevated start removes them (FirewallBlocksActive stays set).
+            }
+        }
+
+        _cancel.Cancel();
+    }
 
     private sealed record SnapshotStamp(ProcessNetworkSnapshot Snapshot, DateTime TakenUtc);
 
@@ -459,6 +595,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
                 if (_filterActive && DateTime.UtcNow - _lastReconcileUtc > ReconcileInterval)
                     await ReconcileAsync(force: false);
+                if (_solo != null && DateTime.UtcNow - _lastFirewallCheckUtc > ReconcileInterval)
+                    await ReconcileFirewallAsync();
             }
             catch (OperationCanceledException)
             {
