@@ -143,6 +143,14 @@
             </StackPanel>
           </Border>
           <TextBlock Text="{Binding Detail}" Classes="note"/>
+          <!-- Anything still in place while the mode is off, checked against Windows and the router. -->
+          <Border Classes="warn" CornerRadius="10" Padding="12,8" IsVisible="{Binding HasLeftovers}">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="{Binding LeftoversText}" Classes="note warn-text" VerticalAlignment="Center"/>
+              <Button Grid.Column="1" Content="Quitar todo" Classes="small-btn" Margin="12,0,0,0" VerticalAlignment="Center"
+                      IsEnabled="{Binding CanToggle}" Click="ClearAll_Click"/>
+            </Grid>
+          </Border>
         </StackPanel>
       </Grid>
 

@@ -32,6 +32,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     private string? _firewallFingerprint;
     private DateTime _lastFirewallCheckUtc = DateTime.MinValue;
     private int _blockedCount;
+    // Set when removing the blocks failed: the loop keeps trying, so the UI never says "off" while they stay.
+    private volatile bool _firewallDirty;
     private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan VerifyInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan SnapshotMaxAge = TimeSpan.FromSeconds(3);
@@ -146,6 +148,7 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         try
         {
             await _firewall.RemoveAllAsync(_cancel.Token);
+            _firewallDirty = false;
             _blockedPaths.Clear();
             _firewallFingerprint = null;
             _blockedCount = 0;
@@ -155,7 +158,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Status = "No se pudieron quitar los bloqueos del firewall: " + ex.Message;
+            _firewallDirty = true;
+            Status = "No se pudieron quitar los bloqueos del firewall; RedFilter lo reintentará: " + ex.Message;
         }
         finally
         {
@@ -231,11 +235,109 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Ends the game's priority when the game mode ends. Only when RedFilter can do it without restarting.</summary>
+    /// <summary>
+    /// Removes every RedFilter QoS policy when the game mode ends. The mode owns this PC's priority while
+    /// it is on, so there is nothing to keep. Without administrator rights it cannot; the leftover check
+    /// then reports it and "Quitar todo" asks for the rights.
+    /// </summary>
     public async Task EndGamePriorityAsync(string? path)
     {
-        if (_isAdmin && (path == null ? FilterOn : HasPriority(path)))
+        if (_isAdmin)
             await RemoveFilterAsync();
     }
+
+    private static DateTime BootTimeUtc => DateTime.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64);
+
+    /// <summary>
+    /// What RedFilter may still have in place on this PC when nothing should be on. As administrator it
+    /// reads Windows itself; without the rights it goes by what RedFilter saved (and the boot time, since
+    /// Windows drops QoS policies at reboot).
+    /// </summary>
+    public async Task<IReadOnlyList<string>> FindLeftoversAsync()
+    {
+        var found = new List<string>();
+        var settings = _store.Load();
+        if (_isAdmin)
+        {
+            if (!FilterOn || _solo == null)
+            {
+                await _qosGate.WaitAsync(_cancel.Token);
+                try
+                {
+                    if (!FilterOn && (await _qos.ReadAsync(_cancel.Token)).Count > 0)
+                        found.Add("límites de subida de Windows (QoS) en tus programas");
+                    if (_solo == null && _firewall != null && (await _firewall.ReadAsync(_cancel.Token)) is { Count: > 0 } rules)
+                        found.Add(rules.Count == 1 ? "1 programa sin internet (firewall)" : $"{rules.Count} programas sin internet (firewall)");
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Could not read Windows; fall back to what RedFilter saved.
+                    if (!FilterOn && settings.QosAppliedUtc > BootTimeUtc)
+                        found.Add("límites de subida de Windows (QoS) en tus programas");
+                    if (_solo == null && settings.FirewallBlocksActive)
+                        found.Add("programas sin internet (firewall)");
+                }
+                finally
+                {
+                    _qosGate.Release();
+                }
+            }
+        }
+        else
+        {
+            if (settings.NetworkOwnerPath != null && settings.QosAppliedUtc > BootTimeUtc)
+                found.Add("límites de subida de Windows (QoS) en tus programas");
+            if (settings.FirewallBlocksActive)
+                found.Add("programas sin internet (firewall)");
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Removes every QoS policy and firewall block RedFilter added. Without administrator rights it asks
+    /// Windows for them and RedFilter restarts to finish the job; returns false in that case.
+    /// </summary>
+    public async Task<bool> ClearLocalAsync()
+    {
+        if (!_isAdmin)
+        {
+            RequestElevation(new QosLaunchRequest(true, null, null, null, null));
+            return false;
+        }
+
+        await StopSoloGameAsync();
+        await RemoveAllFirewallBlocksAsync();
+        await RemoveFilterAsync();
+        return true;
+    }
+
+    private async Task RemoveAllFirewallBlocksAsync()
+    {
+        if (_firewall == null || !_isAdmin)
+            return;
+        await _qosGate.WaitAsync(_cancel.Token);
+        try
+        {
+            await _firewall.RemoveAllAsync(_cancel.Token);
+            _firewallDirty = false;
+            _blockedPaths.Clear();
+            _firewallFingerprint = null;
+            var settings = _store.Load();
+            settings.FirewallBlocksActive = false;
+            _store.Save(settings);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _firewallDirty = true;
+            Status = "No se pudieron quitar los bloqueos del firewall: " + ex.Message;
+        }
+        finally
+        {
+            _qosGate.Release();
+        }
+    }
+
 
     public Task PrioritizeAsync(ProgramRow program)
     {
@@ -321,6 +423,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
             _pendingLaunch = null;
             if (pending.Clear)
             {
+                // "Quitar prioridad" and "Quitar todo" both end here after Windows granted the rights.
+                await RemoveAllFirewallBlocksAsync();
                 await RemoveFilterAsync();
                 return;
             }
@@ -343,6 +447,15 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
             var owner = policies.FirstOrDefault(policy => policy.Name == QosPolicyPlanner.OwnerPolicyName);
             if (owner == null)
             {
+                // Limits without the owner policy are leftovers from a session that ended badly: with no
+                // program prioritized they only slow the other programs down. Remove them.
+                if (policies.Count > 0)
+                {
+                    await _qos.RemoveAllAsync(_cancel.Token);
+                    SaveOwner(null, null, null, Interlocked.Read(ref _throttleBits));
+                    Status = $"Se quitaron {policies.Count} límites de subida que quedaron de una sesión anterior.";
+                }
+
                 FilterOn = false;
                 OwnerText = "Ningún programa tiene prioridad. La red se reparte con normalidad.";
                 return;
@@ -597,6 +710,11 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
                     await ReconcileAsync(force: false);
                 if (_solo != null && DateTime.UtcNow - _lastFirewallCheckUtc > ReconcileInterval)
                     await ReconcileFirewallAsync();
+                else if (_solo == null && _firewallDirty && DateTime.UtcNow - _lastFirewallCheckUtc > TimeSpan.FromSeconds(10))
+                {
+                    _lastFirewallCheckUtc = DateTime.UtcNow;
+                    await RemoveAllFirewallBlocksAsync();
+                }
             }
             catch (OperationCanceledException)
             {
@@ -755,6 +873,7 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         settings.NetworkOwnerPid = pid;
         settings.NetworkOwnerPath = path;
         settings.ThrottleBitsPerSecond = throttle;
+        settings.QosAppliedUtc = path == null ? null : DateTime.UtcNow;
         _store.Save(settings);
     }
 

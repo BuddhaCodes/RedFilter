@@ -71,7 +71,7 @@ Con la casilla **"En este PC, solo Dota tiene internet"** (marcada por defecto),
 
 - Usa reglas de **Windows Firewall** (grupo `RedFilter`) que bloquean la salida de cada programa que use la red. Los que se abran a mitad de partida también se bloquean.
 - **Siguen con internet:** Windows (DNS, servicios), la carpeta de Dota, **Steam** (Dota lo necesita para entrar y buscar partida) y RedFilter. **Discord** también, si marcas *Dejar internet a Discord (voz)*.
-- **Se quita sola:** al cerrar Dota, al apagar el modo o al cerrar RedFilter, todos los programas recuperan internet.
+- **Se quita sola:** al cerrar Dota, al apagar el modo o al cerrar RedFilter, todos los programas recuperan internet. Al apagar el modo, la app comprueba que de verdad no quede nada (ver *Problemas comunes*).
 - Las conexiones que un programa ya tenía abiertas pueden aguantar unos segundos; las nuevas se bloquean al momento.
 - Si la casilla está desmarcada, los demás programas siguen con internet, pero con la subida limitada según el nivel.
 
@@ -174,6 +174,14 @@ El TD-W8961N acepta un solo administrador a la vez. Si entras al panel del route
 <summary><b>Quiero cambiar de router, de usuario o de contraseña</b></summary>
 
 Abajo en *Mi Wi-Fi*, pulsa **Olvidar la contraseña / cambiar de router**. Aparecen la dirección, el usuario y la contraseña para cambiarlos.
+</details>
+
+<details>
+<summary><b>Después de jugar la conexión sigue lenta</b></summary>
+
+Al apagar el modo, RedFilter comprueba en Windows y en el router que no quede nada puesto. Si queda algo (por ejemplo, si la app no estaba abierta como administrador), el panel del modo lo dice y muestra **Quitar todo**, que quita los límites de subida, los bloqueos del firewall y los totales de línea sobrantes del router. Si hace falta, pide permiso de administrador y la app se reinicia para terminar.
+
+La app repite esta comprobación cada minuto mientras el modo está apagado, así que también detecta restos de sesiones anteriores.
 </details>
 
 <details>

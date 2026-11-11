@@ -99,6 +99,58 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
 
     private bool _soloGame;
     private bool _allowDiscord;
+    private string _leftoversText = "";
+    private DateTime _lastLeftoverCheckUtc = DateTime.MinValue;
+    private static readonly TimeSpan LeftoverCheckInterval = TimeSpan.FromSeconds(60);
+
+    /// <summary>What RedFilter still has in place while the mode is off. Empty when everything is clean.</summary>
+    public string LeftoversText { get => _leftoversText; private set { if (Set(ref _leftoversText, value)) Raise(nameof(HasLeftovers)); } }
+    public bool HasLeftovers => LeftoversText.Length > 0;
+
+    /// <summary>
+    /// Looks at what is really in place (Windows QoS, Windows Firewall, the router) instead of trusting
+    /// what the app believes. Returns a sentence for the panel, or "" when nothing is left.
+    /// </summary>
+    private async Task<string> CheckLeftoversAsync()
+    {
+        _lastLeftoverCheckUtc = DateTime.UtcNow;
+        var found = new List<string>(await _network.FindLeftoversAsync());
+        var router = await _wifi.CheckRouterLeftoversAsync();
+        if (router != null)
+            found.Add(router);
+        // Limits set by hand in "Mi Wi-Fi" are the user's choice, not leftovers; only mention them along with real leftovers.
+        var real = found.Count - (router != null ? 1 : 0);
+        LeftoversText = real == 0 ? "" : "Sigue activo: " + string.Join(", ", found) + ".";
+        return router != null && real == 0 ? $"Ojo: {router} (lo pusiste tú en Mi Wi-Fi)." : LeftoversText;
+    }
+
+    /// <summary>"Quitar todo": ends the mode if it is on and removes everything RedFilter put in place.</summary>
+    public async Task ClearAllAsync()
+    {
+        if (Busy)
+            return;
+        if (Active)
+            await StopAsync(automatic: false);
+        Busy = true;
+        try
+        {
+            Detail = "Quitando todo lo que RedFilter puso en este PC…";
+            if (!await _network.ClearLocalAsync())
+            {
+                Detail = "Windows pedirá permiso de administrador; RedFilter se reiniciará y lo quitará.";
+                return;
+            }
+
+            await CheckLeftoversAsync();
+            Detail = HasLeftovers
+                ? "No se pudo quitar todo. " + LeftoversText
+                : "Listo: no queda ningún límite ni bloqueo de RedFilter en el router ni en este PC.";
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
 
     /// <summary>While the mode is on and Dota is running, only Dota (and Steam) has internet on this PC.</summary>
     public bool SoloGame
@@ -287,7 +339,14 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
             _prioritizedPid = null;
             _sawGameWhileActive = false;
             _goneSinceUtc = null;
-            Detail = (automatic ? "Dota 2 se cerró, así que el modo se apagó solo. " : "Modo Dota 2 apagado. ") + routerText;
+
+            // Check what is really left instead of trusting that every step worked.
+            Detail = "Comprobando que no quede nada puesto…";
+            var left = await CheckLeftoversAsync();
+            var head = automatic ? "Dota 2 se cerró, así que el modo se apagó solo. " : "Modo Dota 2 apagado. ";
+            Detail = HasLeftovers
+                ? head + LeftoversText + (_network.IsAdmin ? " Pulsa \"Quitar todo\"." : " Para quitarlo hace falta administrador: pulsa \"Quitar todo\".")
+                : head + "Comprobado: no queda ningún límite de RedFilter en el router ni en este PC." + (left.Length > 0 ? " " + left : "");
         }
         catch (RouterException ex)
         {
@@ -311,6 +370,10 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
 
         if (!Active)
         {
+            // Every minute, look for anything left in place (also catches leftovers from older sessions).
+            if (DateTime.UtcNow - _lastLeftoverCheckUtc > LeftoverCheckInterval)
+                await CheckLeftoversAsync();
+
             if (game != null && Auto && _offeredPid != game.Pid && _wifi.Connected)
             {
                 _offeredPid = game.Pid;

@@ -419,6 +419,28 @@ public sealed class WifiViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// Checks the router when nothing should be squeezing the line: totals with no rule are put back to
+    /// "unlimited" on the spot. Returns a line about what is still there (limits set by hand), or null.
+    /// </summary>
+    public async Task<string?> CheckRouterLeftoversAsync()
+    {
+        if (_session == null || !Connected || GameModeActive)
+            return null;
+        try
+        {
+            var state = await _session.RunAsync(client => client.ClearIdleTotalsAsync(_cancel.Token), _cancel.Token);
+            if (state.Rules.Count == 0)
+                return null;
+            var mine = state.Rules.Count(rule => rule.OnlyMatchesSourceIp);
+            return mine == 1 ? "1 dispositivo limitado a mano en el router" : $"{mine} dispositivos limitados a mano en el router";
+        }
+        catch (RouterException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// A device that joins during the game mode gets its rule too. Runs at most every 30 s, and only
     /// when the router shows an IP the mode has not capped yet.
     /// </summary>

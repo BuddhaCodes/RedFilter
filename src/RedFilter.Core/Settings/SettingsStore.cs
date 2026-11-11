@@ -36,6 +36,12 @@ public sealed class AppSettings
     /// stopped without removing them, the next elevated start removes them.
     /// </summary>
     public bool FirewallBlocksActive { get; set; }
+
+    /// <summary>
+    /// When RedFilter last put QoS policies in place. Windows removes them at reboot, so policies set
+    /// before the last boot are gone; set after it, they may still be there.
+    /// </summary>
+    public DateTime? QosAppliedUtc { get; set; }
 }
 
 public interface ISecretProtector
@@ -99,7 +105,8 @@ public sealed class SettingsStore
             GameModeLevel = settings.GameModeLevel,
             GameModeSoloGame = settings.GameModeSoloGame,
             GameModeAllowDiscord = settings.GameModeAllowDiscord,
-            FirewallBlocksActive = settings.FirewallBlocksActive
+            FirewallBlocksActive = settings.FirewallBlocksActive,
+            QosAppliedUtc = settings.QosAppliedUtc
         };
         WriteAtomically(SettingsPath, System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(copy, JsonOptions)));
     }

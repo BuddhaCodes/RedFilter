@@ -11,6 +11,12 @@ public partial class GameModeView : UserControl
         InitializeComponent();
     }
 
+    private async void ClearAll_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is GameModeViewModel vm)
+            await vm.ClearAllAsync();
+    }
+
     private async void Toggle_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is GameModeViewModel vm)

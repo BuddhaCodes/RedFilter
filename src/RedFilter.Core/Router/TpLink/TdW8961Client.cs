@@ -272,14 +272,33 @@ public sealed class TdW8961Client
             state = await ReadShapingAsync(cancellationToken);
         }
 
-        if (state.TotalUpKbps != backup.TotalUpKbps || state.TotalDownKbps != backup.TotalDownKbps)
+        // With no rule left the line goes back to "unlimited", whatever the totals were before: totals
+        // without rules still cap the whole line at 85-90% and make everything feel slower.
+        var (wantUp, wantDown) = state.Rules.Count == 0 ? (0, 0) : (backup.TotalUpKbps, backup.TotalDownKbps);
+        if (state.TotalUpKbps != wantUp || state.TotalDownKbps != wantDown)
         {
-            await PostAsync(TdW8961LimitPages.ShapingForm, TdW8961LimitPages.SetTotalsBody(backup.TotalUpKbps, backup.TotalDownKbps), cancellationToken);
+            await PostAsync(TdW8961LimitPages.ShapingForm, TdW8961LimitPages.SetTotalsBody(wantUp, wantDown), cancellationToken);
             state = await ReadShapingAsync(cancellationToken);
         }
 
         if (backup.TouchedIps.Any(ip => state.LimitsFor(ip).Any(rule => !backup.Limits.Any(limit => limit.Ip == ip))))
             throw new RouterException("The router still shows game-mode rules. Open its IP QoS > Traffic Shaping page to check it.");
+        return state;
+    }
+
+    /// <summary>
+    /// Line totals with no rule left do nothing useful but cap the whole line; puts them back to
+    /// "unlimited". Returns the state afterwards (its rules are limits the user set by hand).
+    /// </summary>
+    public async Task<ShapingState> ClearIdleTotalsAsync(CancellationToken cancellationToken)
+    {
+        var state = await ReadShapingAsync(cancellationToken);
+        if (state.Rules.Count == 0 && (state.TotalUpKbps != 0 || state.TotalDownKbps != 0))
+        {
+            await PostAsync(TdW8961LimitPages.ShapingForm, TdW8961LimitPages.SetTotalsBody(0, 0), cancellationToken);
+            state = await ReadShapingAsync(cancellationToken);
+        }
+
         return state;
     }
 
