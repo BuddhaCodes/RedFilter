@@ -8,6 +8,14 @@ namespace RedFilter.Platform;
 /// </summary>
 public sealed class PowerShellFirewallStore : IFirewallBlockStore
 {
+    private readonly string? _selfPath;
+
+    /// <param name="selfPath">RedFilter's own executable: the elevated script refuses to block it.</param>
+    public PowerShellFirewallStore(string? selfPath)
+    {
+        _selfPath = selfPath;
+    }
+
     public async Task<IReadOnlyList<FirewallBlockSpec>> ReadAsync(CancellationToken cancellationToken) =>
         NetFirewallScript.ParseQuery(await PowerShellQosPolicyStore.RunAsync(NetFirewallScript.EncodedScript, NetFirewallScript.QueryPayload(), cancellationToken));
 
@@ -17,7 +25,7 @@ public sealed class PowerShellFirewallStore : IFirewallBlockStore
         var (remove, add) = FirewallBlockReconciler.Diff(current, desired);
         if (remove.Count == 0 && add.Count == 0)
             return;
-        var output = await PowerShellQosPolicyStore.RunAsync(NetFirewallScript.EncodedScript, NetFirewallScript.ApplyPayload(remove, add), cancellationToken);
+        var output = await PowerShellQosPolicyStore.RunAsync(NetFirewallScript.EncodedScript, NetFirewallScript.ApplyPayload(remove, add, _selfPath), cancellationToken);
         if (!output.Contains("OK", StringComparison.Ordinal))
             throw new InvalidOperationException("Windows Firewall did not confirm the change. " + PowerShellQosPolicyStore.Excerpt(output));
     }

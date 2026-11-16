@@ -189,11 +189,13 @@ public static class QosPolicyPlanner
 
     public static bool IsProtected(ProcessNetworkRow process)
     {
-        if (NeverThrottle.Contains(process.Name))
+        // Any RedFilter build ("RedFilter-1.0.12-win-x64.exe" as downloaded) must keep its network to undo the mode.
+        if (NeverThrottle.Contains(process.Name) || process.Name.StartsWith("RedFilter", StringComparison.OrdinalIgnoreCase))
             return true;
         if (string.IsNullOrWhiteSpace(process.ExecutablePath))
             return false;
-        return NeverThrottle.Contains(FileStem(process.ExecutablePath));
+        var stem = FileStem(process.ExecutablePath);
+        return NeverThrottle.Contains(stem) || stem.StartsWith("RedFilter", StringComparison.OrdinalIgnoreCase);
     }
 
     // Windows paths are parsed the same way on every OS, so planning does not depend on where it runs.

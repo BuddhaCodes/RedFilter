@@ -69,8 +69,9 @@ Cada nivel usa la menor de las dos cifras (la fija o el porcentaje), así que en
 
 Con la casilla **"En este PC, solo Dota tiene internet"** (marcada por defecto), mientras el modo está encendido y Dota abierto, los demás programas de este PC se quedan **sin internet**: navegador, descargas, actualizadores…
 
-- Usa reglas de **Windows Firewall** (grupo `RedFilter`) que bloquean la salida de cada programa que use la red. Los que se abran a mitad de partida también se bloquean.
-- **Siguen con internet:** Windows (DNS, servicios), la carpeta de Dota, **Steam** (Dota lo necesita para entrar y buscar partida) y RedFilter. **Discord** también, si marcas *Dejar internet a Discord (voz)*.
+- Usa reglas de **Windows Firewall** (grupo `RedFilter`) que bloquean la salida **a internet** de cada programa que use la red. Los que se abran a mitad de partida también se bloquean. La red de casa (el router y los demás equipos) nunca se bloquea.
+- **Siguen con internet:** Windows (DNS, servicios), la carpeta de Dota, **Steam** (Dota lo necesita para entrar y buscar partida) y RedFilter, se llame como se llame su `.exe`. **Discord** también, si marcas *Dejar internet a Discord (voz)*.
+- **Apagar siempre funciona:** primero se quitan los límites de este PC, que no necesitan red, y después los del router. Si el router no responde, el panel dice *APAGANDO* y lo reintenta solo cada pocos segundos, sin volver a limitar este PC mientras tanto.
 - **Se quita sola:** al cerrar Dota, al apagar el modo o al cerrar RedFilter, todos los programas recuperan internet. Al apagar el modo, la app comprueba que de verdad no quede nada (ver *Problemas comunes*).
 - Las conexiones que un programa ya tenía abiertas pueden aguantar unos segundos; las nuevas se bloquean al momento.
 - Si la casilla está desmarcada, los demás programas siguen con internet, pero con la subida limitada según el nivel.

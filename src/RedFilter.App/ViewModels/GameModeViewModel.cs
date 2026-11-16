@@ -93,7 +93,7 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
     public string DotaText { get => _dotaText; private set => Set(ref _dotaText, value); }
     public string Title => Active ? "MODO DOTA 2 ACTIVO" : "MODO DOTA 2";
     public string ToggleLabel => Busy ? "…" : Active ? "APAGAR" : "ACTIVAR";
-    public string StateLabel => Busy ? "APLICANDO" : Active ? "ACTIVO" : "APAGADO";
+    public string StateLabel => Busy ? "APLICANDO" : _stopping ? "APAGANDO" : Active ? "ACTIVO" : "APAGADO";
     public string ToggleTip => Active ? "Apagar el modo y devolver la red a como estaba" : "Activar el modo Dota 2";
     public bool CanToggle => !Busy;
 
@@ -331,10 +331,33 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
         Busy = true;
         try
         {
+            // This PC first: those limits are local and need no network, so they always come off,
+            // even when the router does not answer.
+            Stopping = true;
+            if (!_localReleased)
+            {
+                Detail = "Quitando los límites de este PC…";
+                await _network.StopSoloGameAsync();
+                await _network.EndGamePriorityAsync(_gamePath);
+                _localReleased = true;
+            }
+
             Detail = "Devolviendo el router a como estaba…";
-            var routerText = await _wifi.StopGameModeAsync();
-            await _network.StopSoloGameAsync();
-            await _network.EndGamePriorityAsync(_gamePath);
+            string routerText;
+            try
+            {
+                routerText = await _wifi.StopGameModeAsync();
+            }
+            catch (RouterException ex)
+            {
+                // The router still has the mode's rules. Keep the mode "on" (it is, on the router) and
+                // retry on every check; meanwhile nothing is re-applied on this PC.
+                Detail = "Este PC ya no tiene límites, pero el router no respondió (" + ex.Message + "). RedFilter lo reintentará solo cada pocos segundos.";
+                return;
+            }
+
+            Stopping = false;
+            _localReleased = false;
             Active = false;
             _prioritizedPid = null;
             _sawGameWhileActive = false;
@@ -348,13 +371,26 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
                 ? head + LeftoversText + (_network.IsAdmin ? " Pulsa \"Quitar todo\"." : " Para quitarlo hace falta administrador: pulsa \"Quitar todo\".")
                 : head + "Comprobado: no queda ningún límite de RedFilter en el router ni en este PC." + (left.Length > 0 ? " " + left : "");
         }
-        catch (RouterException ex)
-        {
-            Detail = "No se pudo apagar del todo: " + ex.Message + " Vuelve a pulsar Apagar cuando el router responda.";
-        }
         finally
         {
             Busy = false;
+        }
+    }
+
+    // Set from the moment "Apagar" is pressed until the router part is undone: the check loop must not
+    // put the PC limits back meanwhile, and keeps retrying the router instead.
+    private bool _stopping;
+    private bool _localReleased;
+
+    private bool Stopping
+    {
+        get => _stopping;
+        set
+        {
+            if (_stopping == value)
+                return;
+            _stopping = value;
+            Raise(nameof(StateLabel));
         }
     }
 
@@ -380,6 +416,13 @@ public sealed class GameModeViewModel : ObservableObject, IDisposable
                 await StartAsync(game, askFirst: true);
             }
 
+            return;
+        }
+
+        // Switching off, with the router still to undo: retry it, and do not re-apply anything on this PC.
+        if (_stopping)
+        {
+            await StopAsync(automatic: false);
             return;
         }
 

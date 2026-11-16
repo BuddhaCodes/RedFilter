@@ -49,6 +49,36 @@ public sealed class FirewallBlockTests
     }
 
     [Fact]
+    public void RedFilterIsNeverBlockedWhateverItsFileIsCalled()
+    {
+        var downloaded = @"C:\Users\x\Downloads\RedFilter-1.0.12-win-x64.exe";
+        var renamed = @"C:\Tools\lag-killer.exe";
+
+        var blocks = FirewallBlockPlanner.Build(
+            new[] { P(downloaded), P(renamed), P(@"C:\Chrome\chrome.exe") },
+            new SoloGameOptions(Dota, AllowDiscord: false, SelfPath: renamed),
+            new[] { renamed }); // even if an older version had blocked it
+
+        Assert.Equal(new[] { @"C:\Chrome\chrome.exe" }, blocks.Select(block => block.AppPath).ToArray());
+    }
+
+    [Fact]
+    public void RulesBlockOnlyTheInternetNeverTheHomeNetwork()
+    {
+        Assert.Contains("-RemoteAddress $internet", NetFirewallScript.Script, StringComparison.Ordinal);
+        // The ranges go around 192.168.0.0/16 (and 10/8, 172.16/12): the home network is never blocked.
+        Assert.Contains("'172.32.0.0-192.167.255.255'", NetFirewallScript.Script, StringComparison.Ordinal);
+        Assert.Contains("'192.169.0.0-223.255.255.255'", NetFirewallScript.Script, StringComparison.Ordinal);
+        Assert.Contains("'0.0.0.0-9.255.255.255', '11.0.0.0-100.63.255.255'", NetFirewallScript.Script, StringComparison.Ordinal);
+        Assert.DoesNotContain("192.168.0.0-", NetFirewallScript.Script, StringComparison.Ordinal);
+        Assert.Contains("Refusing to block RedFilter itself.", NetFirewallScript.Script, StringComparison.Ordinal);
+
+        var payload = NetFirewallScript.ApplyPayload(Array.Empty<string>(), Array.Empty<FirewallBlockSpec>(), @"C:\Tools\lag-killer.exe");
+        using var doc = JsonDocument.Parse(payload);
+        Assert.Equal(@"C:\Tools\lag-killer.exe", doc.RootElement.GetProperty("self").GetString());
+    }
+
+    [Fact]
     public void FindsTheGameInstallFolder()
     {
         Assert.Equal(@"C:\Program Files (x86)\Steam\steamapps\common\dota 2 beta\", FirewallBlockPlanner.GameRoot(Dota));

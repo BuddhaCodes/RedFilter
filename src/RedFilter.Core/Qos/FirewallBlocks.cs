@@ -10,7 +10,11 @@ namespace RedFilter.Core.Qos;
 public sealed record FirewallBlockSpec(string Name, string AppPath);
 
 /// <summary>What the "only Dota has internet" part of the game mode keeps working.</summary>
-public sealed record SoloGameOptions(string GamePath, bool AllowDiscord);
+/// <param name="SelfPath">
+/// RedFilter's own executable. It is protected by path, not by name: the downloaded file is called
+/// "RedFilter-1.0.N-win-x64.exe", and blocking it would leave RedFilter unable to turn the mode off.
+/// </param>
+public sealed record SoloGameOptions(string GamePath, bool AllowDiscord, string? SelfPath = null);
 
 public interface IFirewallBlockStore
 {
@@ -69,6 +73,10 @@ public static class FirewallBlockPlanner
     {
         gameRoot ??= GameRoot(options.GamePath);
         var stem = FileStem(path);
+        if (!string.IsNullOrWhiteSpace(options.SelfPath) && path.Trim().Equals(options.SelfPath.Trim(), StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (stem.StartsWith("RedFilter", StringComparison.OrdinalIgnoreCase))
+            return true;
         if (path.Equals(options.GamePath, StringComparison.OrdinalIgnoreCase))
             return true;
         if (gameRoot != null && path.StartsWith(gameRoot, StringComparison.OrdinalIgnoreCase))
@@ -147,6 +155,8 @@ public static class FirewallBlockReconciler
 /// The fixed PowerShell script behind the firewall blocks. Like the QoS script, it never contains a
 /// path or a rule name: those arrive as ASCII JSON on stdin and are only ever passed as parameters.
 /// Every rule lives in the "RedFilter" group, so turning the mode off removes exactly what it added.
+/// Rules block internet addresses only: the home network (the router, at 192.168.x.x) stays reachable
+/// for every program, so nothing can cut RedFilter off from the router it needs to undo the mode.
 /// </summary>
 public static class NetFirewallScript
 {
@@ -163,6 +173,13 @@ public static class NetFirewallScript
         try {
           Import-Module NetSecurity -ErrorAction Stop
           $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
+          # Public internet only: every IPv4 range except private networks (10/8, 172.16/12, 192.168/16),
+          # carrier NAT (100.64/10), loopback, link-local and multicast; global IPv6 only.
+          $internet = @(
+            '0.0.0.0-9.255.255.255', '11.0.0.0-100.63.255.255', '100.128.0.0-126.255.255.255',
+            '128.0.0.0-169.253.255.255', '169.255.0.0-172.15.255.255', '172.32.0.0-192.167.255.255',
+            '192.169.0.0-223.255.255.255', '2000::/3')
+          $self = [string]$request.self
           function Get-RedFilterRule {
             @(Get-NetFirewallRule -Group 'RedFilter' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'RedFilter-Block-*' })
           }
@@ -200,9 +217,10 @@ public static class NetFirewallScript
                 if ($name -cnotmatch '^RedFilter-Block-[A-F0-9]{12}$') { throw 'Refusing an unexpected firewall rule name.' }
                 if ([string]::IsNullOrWhiteSpace($program)) { throw 'A firewall block needs a program path.' }
                 $leaf = [System.IO.Path]::GetFileNameWithoutExtension($program)
-                if (@('svchost', 'lsass', 'services', 'System', 'RedFilter', 'powershell', 'pwsh') -contains $leaf) { throw 'Refusing to block a Windows or RedFilter process.' }
+                if (@('svchost', 'lsass', 'services', 'System', 'powershell', 'pwsh') -contains $leaf) { throw 'Refusing to block a Windows process.' }
+                if ($leaf -like 'RedFilter*' -or ($self -and [string]::Equals($program, $self, [StringComparison]::OrdinalIgnoreCase))) { throw 'Refusing to block RedFilter itself.' }
                 New-NetFirewallRule -Name $name -DisplayName ('RedFilter: modo Dota 2 (' + $leaf + ')') -Group 'RedFilter' `
-                  -Direction Outbound -Action Block -Program $program -Profile Any -Enabled True | Out-Null
+                  -Direction Outbound -Action Block -Program $program -RemoteAddress $internet -Profile Any -Enabled True | Out-Null
                 $applied++
               }
               Write-Output ('OK removed=' + $removed + ' applied=' + $applied)
@@ -221,11 +239,12 @@ public static class NetFirewallScript
 
     public static string ClearPayload() => JsonSerializer.Serialize(new { op = "clear" }, PayloadOptions);
 
-    public static string ApplyPayload(IReadOnlyList<string> remove, IReadOnlyList<FirewallBlockSpec> add)
+    /// <param name="selfPath">RedFilter's own executable: the elevated script refuses to block it, whatever it is called.</param>
+    public static string ApplyPayload(IReadOnlyList<string> remove, IReadOnlyList<FirewallBlockSpec> add, string? selfPath = null)
     {
         var removeNames = remove.Select(RequireName).ToArray();
         var blocks = add.Select(block => new { name = RequireName(block.Name), path = NetQosScript.RequirePath(block.AppPath) }).ToArray();
-        return JsonSerializer.Serialize(new { op = "apply", remove = removeNames, add = blocks }, PayloadOptions);
+        return JsonSerializer.Serialize(new { op = "apply", remove = removeNames, add = blocks, self = selfPath ?? "" }, PayloadOptions);
     }
 
     public static string RequireName(string name) =>

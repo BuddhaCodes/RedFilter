@@ -129,7 +129,10 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     {
         if (!_isAdmin || _firewall == null)
             return false;
-        _solo = options;
+        // Blocks from an older RedFilter blocked the home network too; start clean the first time.
+        if (_solo == null)
+            await RemoveAllFirewallBlocksAsync();
+        _solo = options with { SelfPath = _selfPath };
         _firewallFingerprint = null;
         var settings = _store.Load();
         settings.FirewallBlocksActive = true;
